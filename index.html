@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Audio Switcher</title>
+<style>
+  :root {
+    --bg:       #121212;
+    --surface:  #1e1e1e;
+    --surface2: #2a2a2a;
+    --green:    #2dc55e;
+    --red:      #e02828;
+    --text:     #e0e0e0;
+    --subtext:  #888;
+    --border:   #333;
+    --radius:   12px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    min-height: 100vh;
+    padding-bottom: 40px;
+  }
+
+  /* HEADER */
+  header {
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    padding: 0 16px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .header-inner {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 16px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header img.logo {
+    height: 38px;
+    image-rendering: pixelated;
+  }
+  .wifi-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--subtext);
+  }
+  .wifi-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%,100% { opacity: 1; }
+    50%      { opacity: 0.4; }
+  }
+
+  /* MAIN CONTENT */
+  main {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 24px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  /* SECTION CARD */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .card-header {
+    padding: 14px 20px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--subtext);
+    border-bottom: 1px solid var(--border);
+    background: #000;
+  }
+  .card-body {
+    padding: 20px;
+  }
+
+  /* INPUTS */
+  .inputs-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+  .input-tile {
+    aspect-ratio: 1;
+    background: #000;
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: pointer;
+    transition: border-color .2s, box-shadow .2s, transform .1s;
+    user-select: none;
+  }
+  .input-tile:hover {
+    border-color: #555;
+    transform: translateY(-1px);
+  }
+  .input-tile:active {
+    transform: scale(0.96);
+  }
+  .input-tile.active {
+    border-color: var(--green);
+    box-shadow: 0 0 0 1px var(--green), 0 4px 16px rgba(45,197,94,.2);
+  }
+  .input-tile img {
+    width: 40px;
+    height: 40px;
+    image-rendering: pixelated;
+    opacity: 0.6;
+    transition: opacity .2s;
+  }
+  .input-tile.active img {
+    opacity: 1;
+    filter: drop-shadow(0 0 4px var(--green));
+  }
+  .input-tile span {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    color: var(--subtext);
+    text-transform: uppercase;
+  }
+  .input-tile.active span {
+    color: var(--green);
+  }
+
+  /* REMOTE / IR */
+  .ir-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .ir-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .ir-label {
+    width: 80px;
+    font-size: 13px;
+    color: var(--subtext);
+    flex-shrink: 0;
+  }
+  .ir-code {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 14px;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    color: var(--text);
+    min-width: 0;
+  }
+  .ir-code.learning {
+    border-color: var(--green);
+    color: var(--green);
+    animation: blink-border 0.6s infinite;
+  }
+  @keyframes blink-border {
+    0%,100% { border-color: var(--green); }
+    50%      { border-color: transparent; }
+  }
+  .btn {
+    padding: 9px 16px;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity .2s, transform .1s;
+    white-space: nowrap;
+  }
+  .btn:hover  { opacity: 0.85; }
+  .btn:active { transform: scale(0.96); }
+  .btn-green  { background: var(--green); color: #000; }
+  .btn-red    { background: var(--red);   color: #fff; }
+  .btn-gray   { background: #000; color: var(--text); border: 1px solid var(--border); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  /* COUNTDOWN */
+  .countdown {
+    font-size: 12px;
+    color: var(--green);
+    width: 32px;
+    text-align: center;
+    flex-shrink: 0;
+    display: none;
+  }
+  .countdown.visible { display: block; }
+
+  /* IR SAVE */
+  .ir-save-row {
+    margin-top: 8px;
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  /* WIFI SETTINGS */
+  .wifi-form {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .form-group label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--subtext);
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+  }
+  .form-group input {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 14px;
+    color: var(--text);
+    outline: none;
+    transition: border-color .2s;
+  }
+  .form-group input:focus {
+    border-color: var(--green);
+  }
+  .wifi-save-row {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 4px;
+  }
+
+  /* TOAST */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    background: #000;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 24px;
+    font-size: 14px;
+    transition: transform .3s ease;
+    z-index: 999;
+    white-space: nowrap;
+  }
+  .toast.show {
+    transform: translateX(-50%) translateY(0);
+  }
+  .toast.green { border-color: var(--green); color: var(--green); }
+  .toast.red   { border-color: var(--red);   color: var(--red);   }
+
+  /* STATUS BAR */
+  .status-bar {
+    background: #000;
+    border-top: 1px solid var(--border);
+    padding: 8px 20px;
+    font-size: 11px;
+    color: var(--subtext);
+    display: flex;
+    justify-content: space-between;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <img class="logo" src="data:image/png;base64,{{LOGO_B64}}" alt="Audio Switcher">
+    <div class="wifi-badge">
+      <div class="wifi-dot"></div>
+      <span id="ip-addr">connecting...</span>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <!-- INPUTS -->
+  <div class="card">
+    <div class="card-header">Inputs</div>
+    <div class="card-body">
+      <div class="inputs-grid">
+        <div class="input-tile" id="tile-0" onclick="selectInput(0)">
+          <img src="data:image/png;base64,{{TV_B64}}" alt="TV">
+          <span>TV</span>
+        </div>
+        <div class="input-tile" id="tile-1" onclick="selectInput(1)">
+          <img src="data:image/png;base64,{{BT_B64}}" alt="BT">
+          <span>BT</span>
+        </div>
+        <div class="input-tile" id="tile-2" onclick="selectInput(2)">
+          <img src="data:image/png;base64,{{RADIO_B64}}" alt="NET">
+          <span>NET</span>
+        </div>
+        <div class="input-tile" id="tile-3" onclick="selectInput(3)">
+          <img src="data:image/png;base64,{{OTHER_B64}}" alt="RES">
+          <span>RES</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- REMOTE -->
+  <div class="card">
+    <div class="card-header">Remote Control — IR Codes</div>
+    <div class="card-body">
+      <div class="ir-rows">
+        <div class="ir-row">
+          <span class="ir-label">Source</span>
+          <input class="ir-code" id="ir-source" type="text" readonly placeholder="not set">
+          <span class="countdown" id="cd-source"></span>
+          <button class="btn btn-gray" onclick="learnIR('source')">Learn</button>
+        </div>
+        <div class="ir-row">
+          <span class="ir-label">Input 1 — TV</span>
+          <input class="ir-code" id="ir-input1" type="text" readonly placeholder="not set">
+          <span class="countdown" id="cd-input1"></span>
+          <button class="btn btn-gray" onclick="learnIR('input1')">Learn</button>
+        </div>
+        <div class="ir-row">
+          <span class="ir-label">Input 2 — BT</span>
+          <input class="ir-code" id="ir-input2" type="text" readonly placeholder="not set">
+          <span class="countdown" id="cd-input2"></span>
+          <button class="btn btn-gray" onclick="learnIR('input2')">Learn</button>
+        </div>
+        <div class="ir-row">
+          <span class="ir-label">Input 3 — NET</span>
+          <input class="ir-code" id="ir-input3" type="text" readonly placeholder="not set">
+          <span class="countdown" id="cd-input3"></span>
+          <button class="btn btn-gray" onclick="learnIR('input3')">Learn</button>
+        </div>
+        <div class="ir-row">
+          <span class="ir-label">Input 4 — RES</span>
+          <input class="ir-code" id="ir-input4" type="text" readonly placeholder="not set">
+          <span class="countdown" id="cd-input4"></span>
+          <button class="btn btn-gray" onclick="learnIR('input4')">Learn</button>
+        </div>
+      </div>
+      <div class="ir-save-row">
+        <button class="btn btn-green" onclick="saveIR()">Save IR Codes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- WIFI SETTINGS -->
+  <div class="card">
+    <div class="card-header">WiFi Settings</div>
+    <div class="card-body">
+      <div class="wifi-form">
+        <div class="form-group">
+          <label>Network SSID</label>
+          <input type="text" id="wifi-ssid" placeholder="Your WiFi network name">
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="wifi-pass" placeholder="WiFi password">
+        </div>
+        <div class="wifi-save-row">
+          <button class="btn btn-gray" onclick="testWifi()">Test</button>
+          <button class="btn btn-green" onclick="saveWifi()">Save &amp; Restart</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+// WebSocket
+// ============================================================
+let ws;
+let currentInput = 0;
+let learningKey = null;
+let countdownInterval = null;
+
+function connectWS() {
+  ws = new WebSocket('ws://' + location.hostname + '/ws');
+
+  ws.onopen = () => {
+    console.log('WS connected');
+    ws.send(JSON.stringify({type: 'get_status'}));
+  };
+
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    handleMessage(msg);
+  };
+
+  ws.onclose = () => {
+    console.log('WS closed, reconnecting...');
+    setTimeout(connectWS, 2000);
+  };
+
+  ws.onerror = () => ws.close();
+}
+
+function send(obj) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(obj));
+  }
+}
+
+// ============================================================
+// Message handler
+// ============================================================
+function handleMessage(msg) {
+  switch(msg.type) {
+
+    case 'status':
+      // Pełny status przy połączeniu
+      setActiveInput(msg.input);
+      document.getElementById('ip-addr').textContent = msg.ip || '';
+      if (msg.ir) {
+        setIRCodes(msg.ir);
+      }
+      if (msg.wifi_ssid) {
+        document.getElementById('wifi-ssid').value = msg.wifi_ssid;
+      }
+      break;
+
+    case 'input_changed':
+      setActiveInput(msg.input);
+      showToast('Input ' + (msg.input + 1) + ' selected', 'green');
+      break;
+
+    case 'ir_received':
+      // Kod IR odebrany podczas nauki
+      if (learningKey === msg.key) {
+        stopLearning(msg.key, msg.code);
+      }
+      break;
+
+    case 'ir_timeout':
+      if (learningKey === msg.key) {
+        stopLearning(msg.key, null);
+        showToast('No IR signal received', 'red');
+      }
+      break;
+
+    case 'ir_saved':
+      showToast('IR codes saved!', 'green');
+      break;
+
+    case 'wifi_saved':
+      showToast('WiFi saved! Restarting...', 'green');
+      break;
+
+    case 'wifi_test_ok':
+      showToast('WiFi OK: ' + msg.ip, 'green');
+      break;
+
+    case 'wifi_test_fail':
+      showToast('WiFi connection failed!', 'red');
+      break;
+  }
+}
+
+// ============================================================
+// INPUTS
+// ============================================================
+function selectInput(index) {
+  send({type: 'set_input', input: index});
+}
+
+function setActiveInput(index) {
+  currentInput = index;
+  document.querySelectorAll('.input-tile').forEach((tile, i) => {
+    tile.classList.toggle('active', i === index);
+  });
+}
+
+// ============================================================
+// IR LEARNING
+// ============================================================
+function learnIR(key) {
+  if (learningKey) return;  // Już uczymy
+
+  learningKey = key;
+  const input = document.getElementById('ir-' + key);
+  const cd    = document.getElementById('cd-' + key);
+
+  input.classList.add('learning');
+  input.value = 'Press remote button...';
+  cd.classList.add('visible');
+
+  // Countdown 10s
+  let secs = 10;
+  cd.textContent = secs + 's';
+  countdownInterval = setInterval(() => {
+    secs--;
+    cd.textContent = secs + 's';
+    if (secs <= 0) clearInterval(countdownInterval);
+  }, 1000);
+
+  // Wyślij do ESP32
+  send({type: 'learn_ir', key: key});
+}
+
+function stopLearning(key, code) {
+  clearInterval(countdownInterval);
+  learningKey = null;
+
+  const input = document.getElementById('ir-' + key);
+  const cd    = document.getElementById('cd-' + key);
+
+  input.classList.remove('learning');
+  cd.classList.remove('visible');
+
+  if (code) {
+    input.value = '0x' + code.toString(16).toUpperCase().padStart(8, '0');
+    showToast('IR code learned!', 'green');
+  } else {
+    input.value = input.dataset.prev || '';
+  }
+}
+
+function setIRCodes(ir) {
+  const keys = ['source', 'input1', 'input2', 'input3', 'input4'];
+  keys.forEach(key => {
+    if (ir[key]) {
+      const el = document.getElementById('ir-' + key);
+      el.value = '0x' + ir[key].toString(16).toUpperCase().padStart(8, '0');
+      el.dataset.prev = el.value;
+    }
+  });
+}
+
+function saveIR() {
+  const keys = ['source', 'input1', 'input2', 'input3', 'input4'];
+  const codes = {};
+  keys.forEach(key => {
+    const val = document.getElementById('ir-' + key).value;
+    if (val && val !== 'not set') {
+      codes[key] = parseInt(val, 16);
+    }
+  });
+  send({type: 'save_ir', codes: codes});
+}
+
+// ============================================================
+// WIFI
+// ============================================================
+function saveWifi() {
+  const ssid = document.getElementById('wifi-ssid').value.trim();
+  const pass = document.getElementById('wifi-pass').value;
+  if (!ssid) { showToast('Enter SSID!', 'red'); return; }
+  send({type: 'save_wifi', ssid: ssid, pass: pass});
+}
+
+function testWifi() {
+  const ssid = document.getElementById('wifi-ssid').value.trim();
+  const pass = document.getElementById('wifi-pass').value;
+  if (!ssid) { showToast('Enter SSID!', 'red'); return; }
+  send({type: 'test_wifi', ssid: ssid, pass: pass});
+  showToast('Testing WiFi...', '');
+}
+
+// ============================================================
+// TOAST
+// ============================================================
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast ' + type + ' show';
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ============================================================
+// INIT
+// ============================================================
+connectWS();
+</script>
+</body>
+</html>
