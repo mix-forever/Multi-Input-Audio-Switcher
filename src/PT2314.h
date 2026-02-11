@@ -1,10 +1,7 @@
-// liman324@yandex.ru rcl-radio.ru
-
-
 #ifndef PT2314_H
 #define PT2314_H
 
-#define PT2314_address 0x44 // адрес 0b10001000
+#define PT2314_address 0x44 // adres 0b10001000
 
 
 #include <Arduino.h>

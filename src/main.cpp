@@ -1,6 +1,6 @@
 // ============================================================
-// AUDIO SWITCHER v3.0
-// ESP32-WROOM-32 + PT2314E + ST7789 + IR + WiFi + WebSocket
+// AUDIO SWITCHER v4.0
+// ESP32-WROOM-32 + PT2314E + ST7789 + IR + WiFi + WS + MQTT + OTA
 // ============================================================
 
 #include <Arduino.h>
@@ -10,6 +10,8 @@
 #include <Preferences.h>
 #include <ESPAsyncWebServer.h>
 #include <AsyncWebSocket.h>
+#include <AsyncMqttClient.h>
+#include <Update.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7789.h>
 #include <IRrecv.h>
@@ -31,6 +33,14 @@
 #define PT_SDA   21
 #define PT_SCL   22
 #define IR_PIN   19
+#define TFT_BL   15
+#define RELAY_BT  4   // SSR high-level trigger - BT power
+
+// PWM backlight
+#define BL_CHANNEL   0
+#define BL_FREQ   5000
+#define BL_RES       8
+#define BL_DEFAULT 200
 
 // ============================================================
 // DISPLAY
@@ -48,8 +58,14 @@
 // ============================================================
 // IR
 // ============================================================
-#define IR_DEBOUNCE     300
-#define IR_LEARN_TIMEOUT 10000  // 10 sekund na naukę
+#define IR_DEBOUNCE      300
+#define IR_LEARN_TIMEOUT 10000
+
+// ============================================================
+// MQTT defaults
+// ============================================================
+#define MQTT_RECONNECT_DELAY 5000
+#define MQTT_TOPIC_DEFAULT   "audio_switcher"
 
 // ============================================================
 // KOLORY
@@ -80,46 +96,77 @@ const uint16_t* INPUT_ICONS[] = {icon_tv, icon_bt, icon_radio, icon_other};
 // ============================================================
 // GLOBALS
 // ============================================================
-Adafruit_ST7789    tft     = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST);
-IRrecv             irrecv(IR_PIN);
-PT2314             audio;
-AsyncWebServer     server(80);
-AsyncWebSocket     ws("/ws");
-Preferences        prefs;
+Adafruit_ST7789  tft    = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST);
+IRrecv           irrecv(IR_PIN);
+PT2314           audio;
+AsyncWebServer   server(80);
+AsyncWebSocket   ws("/ws");
+AsyncMqttClient  mqttClient;
+Preferences      prefs;
 
-uint8_t  currentInput   = 0;
-unsigned long lastIR    = 0;
+uint8_t       currentInput  = 0;
+unsigned long lastIR        = 0;
 
 // IR kody (ładowane z NVS)
 uint32_t irCodes[5] = {0, 0, 0, 0, 0};
-// 0=source, 1=input1, 2=input2, 3=input3, 4=input4
+// 0=source, 1=input1..4=input4
 
 // IR learning state
-bool     learningIR     = false;
-String   learningKey    = "";
-unsigned long learnStart = 0;
+bool          learningIR  = false;
+String        learningKey = "";
+unsigned long learnStart  = 0;
 
 // WiFi state
-String   wifiSSID = "";
-String   wifiPass = "";
-String   localIP  = "";
-bool     staConnected = false;
+String wifiSSID     = "";
+String wifiPass     = "";
+String localIP      = "";
+bool   staConnected = false;
+
+// Backlight
+uint8_t brightness = BL_DEFAULT;
+
+// Display settings
+bool dispInvert = false;
+bool dispRotate = false;
+
+// MQTT state
+String        mqttHost    = "";
+uint16_t      mqttPort    = 1883;
+String        mqttUser    = "";
+String        mqttPass    = "";
+String        mqttTopic   = MQTT_TOPIC_DEFAULT;
+bool          mqttEnabled = false;
+bool          mqttConnected = false;
+unsigned long mqttLastReconnect = 0;
+
+// OTA state
+bool otaInProgress = false;
 
 // ============================================================
-// NVS - zapis/odczyt
+// NVS
 // ============================================================
 void loadPrefs() {
     prefs.begin("switcher", false);
 
-    wifiSSID   = prefs.getString("wifi_ssid", "");
-    wifiPass   = prefs.getString("wifi_pass", "");
-    currentInput = prefs.getUChar("last_input", 0);
+    wifiSSID     = prefs.getString("wifi_ssid",  "");
+    wifiPass     = prefs.getString("wifi_pass",  "");
+    currentInput = prefs.getUChar("last_input",  0);
+    brightness   = prefs.getUChar("brightness",  BL_DEFAULT);
+    dispInvert   = prefs.getBool("disp_invert",  false);
+    dispRotate   = prefs.getBool("disp_rotate",  false);
 
-    irCodes[0] = prefs.getUInt("ir_source", 0);
-    irCodes[1] = prefs.getUInt("ir_input1", 0);
-    irCodes[2] = prefs.getUInt("ir_input2", 0);
-    irCodes[3] = prefs.getUInt("ir_input3", 0);
-    irCodes[4] = prefs.getUInt("ir_input4", 0);
+    irCodes[0]   = prefs.getUInt("ir_source",  0);
+    irCodes[1]   = prefs.getUInt("ir_input1",  0);
+    irCodes[2]   = prefs.getUInt("ir_input2",  0);
+    irCodes[3]   = prefs.getUInt("ir_input3",  0);
+    irCodes[4]   = prefs.getUInt("ir_input4",  0);
+
+    mqttHost     = prefs.getString("mqtt_host",  "");
+    mqttPort     = prefs.getUShort("mqtt_port",  1883);
+    mqttUser     = prefs.getString("mqtt_user",  "");
+    mqttPass     = prefs.getString("mqtt_pass",  "");
+    mqttTopic    = prefs.getString("mqtt_topic", MQTT_TOPIC_DEFAULT);
+    mqttEnabled  = prefs.getBool("mqtt_en",      false);
 
     prefs.end();
     Serial.println("NVS: Prefs loaded");
@@ -128,6 +175,19 @@ void loadPrefs() {
 void saveLastInput(uint8_t input) {
     prefs.begin("switcher", false);
     prefs.putUChar("last_input", input);
+    prefs.end();
+}
+
+void saveBrightness(uint8_t val) {
+    prefs.begin("switcher", false);
+    prefs.putUChar("brightness", val);
+    prefs.end();
+}
+
+void saveDisplaySettings() {
+    prefs.begin("switcher", false);
+    prefs.putBool("disp_invert", dispInvert);
+    prefs.putBool("disp_rotate", dispRotate);
     prefs.end();
 }
 
@@ -148,6 +208,34 @@ void saveWifiCreds(const String& ssid, const String& pass) {
     prefs.putString("wifi_pass", pass);
     prefs.end();
     Serial.println("NVS: WiFi saved");
+}
+
+void saveMqttSettings() {
+    prefs.begin("switcher", false);
+    prefs.putString("mqtt_host",  mqttHost);
+    prefs.putUShort("mqtt_port",  mqttPort);
+    prefs.putString("mqtt_user",  mqttUser);
+    prefs.putString("mqtt_pass",  mqttPass);
+    prefs.putString("mqtt_topic", mqttTopic);
+    prefs.putBool("mqtt_en",      mqttEnabled);
+    prefs.end();
+    Serial.println("NVS: MQTT saved");
+}
+
+// ============================================================
+// DISPLAY - forward declarations
+// ============================================================
+void drawUI();
+void notifyAll(const String& msg);
+
+// ============================================================
+// DISPLAY SETTINGS
+// ============================================================
+void applyDisplaySettings() {
+    tft.setRotation(dispRotate ? 3 : 1);
+    tft.invertDisplay(dispInvert);
+    drawUI();
+    Serial.printf("Display: rotate=%d invert=%d\n", dispRotate, dispInvert);
 }
 
 // ============================================================
@@ -197,10 +285,9 @@ void updateInput(uint8_t oldInput, uint8_t newInput) {
 }
 
 // ============================================================
-// DISPLAY - info overlay (WiFi status)
+// DISPLAY - overlaye
 // ============================================================
 void showWifiOverlay(const String& line1, const String& line2, uint16_t color) {
-    // Mały pasek u góry wyświetlacza
     tft.fillRect(0, 0, SCREEN_W, 14, COLOR_BG);
     tft.setTextSize(1);
     tft.setTextColor(color);
@@ -220,12 +307,21 @@ void showIROverlay(const String& msg) {
     tft.print(msg);
 }
 
+void showOTAOverlay(int percent) {
+    tft.fillRect(0, 0, SCREEN_W, 14, COLOR_BG);
+    tft.setTextSize(1);
+    tft.setTextColor(COLOR_GREEN);
+    tft.setCursor(4, 3);
+    tft.print("OTA: " + String(percent) + "%");
+    // Pasek postępu
+    int barW = (SCREEN_W - 80) * percent / 100;
+    tft.fillRect(60, 4, barW, 6, COLOR_GREEN);
+}
+
 void clearOverlay() {
     tft.fillRect(0, 0, SCREEN_W, 14, COLOR_BG);
-    // Przerysuj górne kafelki (ucięte przez overlay)
     for(uint8_t i = 0; i < 4; i++) {
         uint16_t x = TILE_MARGIN + i * (TILE_W + TILE_MARGIN);
-        // Przerysuj tylko górną krawędź kafelka
         if(i == currentInput) {
             tft.drawRoundRect(x,     TILE_MARGIN,     TILE_W,     TILE_H,     TILE_RADIUS,     COLOR_ACTIVE);
             tft.drawRoundRect(x + 1, TILE_MARGIN + 1, TILE_W - 2, TILE_H - 2, TILE_RADIUS - 1, COLOR_ACTIVE);
@@ -237,7 +333,7 @@ void clearOverlay() {
 }
 
 // ============================================================
-// DISPLAY - splash logo
+// DISPLAY - splash
 // ============================================================
 void showSplash() {
     tft.startWrite();
@@ -256,6 +352,14 @@ void showSplash() {
 }
 
 // ============================================================
+// BACKLIGHT
+// ============================================================
+void setBrightness(uint8_t val) {
+    brightness = val;
+    ledcWrite(BL_CHANNEL, val);
+}
+
+// ============================================================
 // AUDIO
 // ============================================================
 void initAudio(uint8_t input) {
@@ -267,6 +371,26 @@ void initAudio(uint8_t input) {
     audio.setSwitch(input, 0, 0);
 }
 
+// ============================================================
+// MQTT - publish
+// ============================================================
+void mqttPublishInput(uint8_t input) {
+    if(!mqttConnected) return;
+    String topic = mqttTopic + "/state";
+    String payload = String(input + 1);  // 1-4
+    mqttClient.publish(topic.c_str(), 0, true, payload.c_str());
+    Serial.printf("MQTT pub: %s = %s\n", topic.c_str(), payload.c_str());
+}
+
+void mqttPublishStatus(const char* status) {
+    if(!mqttConnected) return;
+    String topic = mqttTopic + "/status";
+    mqttClient.publish(topic.c_str(), 0, true, status);
+}
+
+// ============================================================
+// INPUT SWITCH
+// ============================================================
 void switchInput(uint8_t newInput) {
     if(newInput > 3) return;
     uint8_t old = currentInput;
@@ -274,19 +398,32 @@ void switchInput(uint8_t newInput) {
     audio.setSwitch(currentInput, 0, 0);
     updateInput(old, currentInput);
     saveLastInput(currentInput);
-    Serial.printf("Input: %d [%s]\n", currentInput + 1, INPUT_NAMES[currentInput]);
+    digitalWrite(RELAY_BT, currentInput == 1 ? HIGH : LOW);
+    mqttPublishInput(currentInput);
+    Serial.printf("Input: %d [%s] BT relay: %s\n",
+        currentInput + 1, INPUT_NAMES[currentInput],
+        currentInput == 1 ? "ON" : "OFF");
 }
 
 // ============================================================
-// WEBSOCKET - buduj JSON status
+// WEBSOCKET - status JSON
 // ============================================================
 String buildStatusJSON() {
     String json = "{\"type\":\"status\"";
-    json += ",\"input\":" + String(currentInput);
-    json += ",\"ip\":\"" + (staConnected ? localIP : String(AP_IP)) + "\"";
-    json += ",\"wifi_ssid\":\"" + wifiSSID + "\"";
+    json += ",\"input\":"        + String(currentInput);
+    json += ",\"ip\":\""         + (staConnected ? localIP : String(AP_IP)) + "\"";
+    json += ",\"wifi_ssid\":\""  + wifiSSID + "\"";
+    json += ",\"brightness\":"   + String(brightness);
+    json += ",\"disp_invert\":"  + String(dispInvert ? "true" : "false");
+    json += ",\"disp_rotate\":"  + String(dispRotate ? "true" : "false");
+    json += ",\"mqtt_host\":\""  + mqttHost + "\"";
+    json += ",\"mqtt_port\":"    + String(mqttPort);
+    json += ",\"mqtt_user\":\""  + mqttUser + "\"";
+    json += ",\"mqtt_topic\":\"" + mqttTopic + "\"";
+    json += ",\"mqtt_enabled\":" + String(mqttEnabled ? "true" : "false");
+    json += ",\"mqtt_connected\":" + String(mqttConnected ? "true" : "false");
     json += ",\"ir\":{";
-    json += "\"source\":" + String(irCodes[0]);
+    json += "\"source\":"  + String(irCodes[0]);
     json += ",\"input1\":" + String(irCodes[1]);
     json += ",\"input2\":" + String(irCodes[2]);
     json += ",\"input3\":" + String(irCodes[3]);
@@ -303,8 +440,7 @@ void notifyAll(const String& msg) {
 // WEBSOCKET - obsługa wiadomości
 // ============================================================
 void handleWSMessage(AsyncWebSocketClient* client, const String& data) {
-    // Prosta parsowanie JSON bez biblioteki
-    Serial.println("WS recv: " + data);
+    Serial.println("WS: " + data);
 
     if(data.indexOf("\"get_status\"") >= 0) {
         client->text(buildStatusJSON());
@@ -312,71 +448,100 @@ void handleWSMessage(AsyncWebSocketClient* client, const String& data) {
     else if(data.indexOf("\"set_input\"") >= 0) {
         int idx = data.indexOf("\"input\":");
         if(idx >= 0) {
-            int val = data.substring(idx + 8).toInt();
-            switchInput(val);
+            switchInput(data.substring(idx + 8).toInt());
             notifyAll("{\"type\":\"input_changed\",\"input\":" + String(currentInput) + "}");
         }
     }
     else if(data.indexOf("\"learn_ir\"") >= 0) {
         int idx = data.indexOf("\"key\":\"");
         if(idx >= 0) {
-            int start = idx + 7;
-            int end = data.indexOf("\"", start);
-            learningKey  = data.substring(start, end);
-            learningIR   = true;
-            learnStart   = millis();
-            Serial.println("IR: Learning " + learningKey);
+            int s = idx + 7, e = data.indexOf("\"", s);
+            learningKey = data.substring(s, e);
+            learningIR  = true;
+            learnStart  = millis();
             showIROverlay("IR: Press button for " + learningKey + "...");
         }
     }
     else if(data.indexOf("\"save_ir\"") >= 0) {
-        // Parsuj kody IR z JSON
-        const char* keys[] = {"source", "input1", "input2", "input3", "input4"};
+        const char* keys[] = {"source","input1","input2","input3","input4"};
         for(int i = 0; i < 5; i++) {
             String search = "\"" + String(keys[i]) + "\":";
             int idx = data.indexOf(search);
-            if(idx >= 0) {
+            if(idx >= 0)
                 irCodes[i] = strtoul(data.substring(idx + search.length()).c_str(), nullptr, 10);
-            }
         }
         saveIRCodes();
         notifyAll("{\"type\":\"ir_saved\"}");
     }
+    else if(data.indexOf("\"set_brightness\"") >= 0) {
+        int idx = data.indexOf("\"value\":");
+        if(idx >= 0) {
+            uint8_t val = (uint8_t)data.substring(idx + 8).toInt();
+            setBrightness(val);
+            saveBrightness(val);
+        }
+    }
+    else if(data.indexOf("\"set_invert\"") >= 0) {
+        int idx = data.indexOf("\"value\":");
+        if(idx >= 0) {
+            dispInvert = data.substring(idx + 8).startsWith("true");
+            tft.invertDisplay(dispInvert);
+            saveDisplaySettings();
+        }
+    }
+    else if(data.indexOf("\"set_rotate\"") >= 0) {
+        int idx = data.indexOf("\"value\":");
+        if(idx >= 0) {
+            dispRotate = data.substring(idx + 8).startsWith("true");
+            applyDisplaySettings();
+            saveDisplaySettings();
+        }
+    }
     else if(data.indexOf("\"save_wifi\"") >= 0) {
-        int si = data.indexOf("\"ssid\":\"");
-        int pi = data.indexOf("\"pass\":\"");
+        int si = data.indexOf("\"ssid\":\""), pi = data.indexOf("\"pass\":\"");
         if(si >= 0 && pi >= 0) {
-            int ss = si + 8, se = data.indexOf("\"", ss);
-            int ps = pi + 8, pe = data.indexOf("\"", ps);
-            String newSSID = data.substring(ss, se);
-            String newPass = data.substring(ps, pe);
-            saveWifiCreds(newSSID, newPass);
+            int ss = si+8, se = data.indexOf("\"",ss);
+            int ps = pi+8, pe = data.indexOf("\"",ps);
+            saveWifiCreds(data.substring(ss,se), data.substring(ps,pe));
             notifyAll("{\"type\":\"wifi_saved\"}");
             delay(1500);
             ESP.restart();
         }
     }
     else if(data.indexOf("\"test_wifi\"") >= 0) {
-        int si = data.indexOf("\"ssid\":\"");
-        int pi = data.indexOf("\"pass\":\"");
+        int si = data.indexOf("\"ssid\":\""), pi = data.indexOf("\"pass\":\"");
         if(si >= 0 && pi >= 0) {
-            int ss = si + 8, se = data.indexOf("\"", ss);
-            int ps = pi + 8, pe = data.indexOf("\"", ps);
-            String testSSID = data.substring(ss, se);
-            String testPass = data.substring(ps, pe);
-
-            WiFi.begin(testSSID.c_str(), testPass.c_str());
+            int ss = si+8, se = data.indexOf("\"",ss);
+            int ps = pi+8, pe = data.indexOf("\"",ps);
+            WiFi.begin(data.substring(ss,se).c_str(), data.substring(ps,pe).c_str());
             int tries = 0;
-            while(WiFi.status() != WL_CONNECTED && tries < 20) {
-                delay(500); tries++;
-            }
-            if(WiFi.status() == WL_CONNECTED) {
-                String testIP = WiFi.localIP().toString();
-                client->text("{\"type\":\"wifi_test_ok\",\"ip\":\"" + testIP + "\"}");
-            } else {
+            while(WiFi.status() != WL_CONNECTED && tries < 20) { delay(500); tries++; }
+            if(WiFi.status() == WL_CONNECTED)
+                client->text("{\"type\":\"wifi_test_ok\",\"ip\":\"" + WiFi.localIP().toString() + "\"}");
+            else
                 client->text("{\"type\":\"wifi_test_fail\"}");
-            }
         }
+    }
+    else if(data.indexOf("\"save_mqtt\"") >= 0) {
+        auto extract = [&](const String& key) -> String {
+            String search = "\"" + key + "\":\"";
+            int idx = data.indexOf(search);
+            if(idx < 0) return "";
+            int s = idx + search.length();
+            return data.substring(s, data.indexOf("\"", s));
+        };
+        mqttHost    = extract("host");
+        mqttUser    = extract("user");
+        mqttPass    = extract("pass");
+        mqttTopic   = extract("topic");
+        int pi = data.indexOf("\"port\":");
+        if(pi >= 0) mqttPort = data.substring(pi + 7).toInt();
+        int ei = data.indexOf("\"enabled\":");
+        if(ei >= 0) mqttEnabled = data.substring(ei + 10).startsWith("true");
+        saveMqttSettings();
+        notifyAll("{\"type\":\"mqtt_saved\"}");
+        // Reconnect z nowymi ustawieniami
+        if(mqttClient.connected()) mqttClient.disconnect();
     }
 }
 
@@ -386,11 +551,11 @@ void handleWSMessage(AsyncWebSocketClient* client, const String& data) {
 void onWSEvent(AsyncWebSocket* server, AsyncWebSocketClient* client,
                AwsEventType type, void* arg, uint8_t* data, size_t len) {
     if(type == WS_EVT_CONNECT) {
-        Serial.printf("WS client %u connected\n", client->id());
+        Serial.printf("WS: client %u connected\n", client->id());
         client->text(buildStatusJSON());
     }
     else if(type == WS_EVT_DISCONNECT) {
-        Serial.printf("WS client %u disconnected\n", client->id());
+        Serial.printf("WS: client %u disconnected\n", client->id());
     }
     else if(type == WS_EVT_DATA) {
         String msg = "";
@@ -400,47 +565,170 @@ void onWSEvent(AsyncWebSocket* server, AsyncWebSocketClient* client,
 }
 
 // ============================================================
+// MQTT - callbacks
+// ============================================================
+void onMqttConnect(bool sessionPresent) {
+    mqttConnected = true;
+    Serial.println("MQTT: Connected");
+
+    // Subscribe na temat /set
+    String subTopic = mqttTopic + "/set";
+    mqttClient.subscribe(subTopic.c_str(), 0);
+    Serial.println("MQTT: Subscribed to " + subTopic);
+
+    // Publish status online + aktualny stan
+    mqttPublishStatus("online");
+    mqttPublishInput(currentInput);
+
+    // Powiadom web interface
+    notifyAll("{\"type\":\"mqtt_connected\"}");
+}
+
+void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
+    mqttConnected = false;
+    Serial.println("MQTT: Disconnected");
+    notifyAll("{\"type\":\"mqtt_disconnected\"}");
+}
+
+void onMqttMessage(char* topic, char* payload,
+                   AsyncMqttClientMessageProperties properties,
+                   size_t len, size_t index, size_t total) {
+    String msg = "";
+    for(size_t i = 0; i < len; i++) msg += (char)payload[i];
+    String topicStr = String(topic);
+
+    Serial.printf("MQTT recv: %s = %s\n", topic, msg.c_str());
+
+    // {topic}/set - przełącz wejście
+    if(topicStr == mqttTopic + "/set") {
+        int input = msg.toInt() - 1;  // 1-4 → 0-3
+        if(input >= 0 && input <= 3) {
+            switchInput(input);
+            notifyAll("{\"type\":\"input_changed\",\"input\":" + String(currentInput) + "}");
+        }
+    }
+}
+
+// ============================================================
+// MQTT - setup i reconnect
+// ============================================================
+void setupMqtt() {
+    if(mqttHost.length() == 0 || !mqttEnabled) return;
+
+    mqttClient.onConnect(onMqttConnect);
+    mqttClient.onDisconnect(onMqttDisconnect);
+    mqttClient.onMessage(onMqttMessage);
+
+    mqttClient.setServer(mqttHost.c_str(), mqttPort);
+
+    if(mqttUser.length() > 0)
+        mqttClient.setCredentials(mqttUser.c_str(), mqttPass.c_str());
+
+    // Last Will Testament
+    String lwtTopic = mqttTopic + "/status";
+    mqttClient.setWill(lwtTopic.c_str(), 0, true, "offline");
+
+    mqttClient.setClientId("AudioSwitcher");
+
+    mqttClient.connect();
+    Serial.printf("MQTT: Connecting to %s:%d\n", mqttHost.c_str(), mqttPort);
+}
+
+void mqttReconnectIfNeeded() {
+    if(!mqttEnabled || mqttHost.length() == 0) return;
+    if(mqttConnected) return;
+    if(!staConnected) return;
+
+    unsigned long now = millis();
+    if(now - mqttLastReconnect < MQTT_RECONNECT_DELAY) return;
+    mqttLastReconnect = now;
+
+    Serial.println("MQTT: Reconnecting...");
+    mqttClient.connect();
+}
+
+// ============================================================
+// OTA - setup
+// ============================================================
+void setupOTA() {
+    // Endpoint odbioru pliku .bin
+    server.on("/update", HTTP_POST,
+        // Odpowiedź po zakończeniu
+        [](AsyncWebServerRequest* req) {
+            bool success = !Update.hasError();
+            String msg = success ? "{\"type\":\"ota_ok\"}" : "{\"type\":\"ota_fail\"}";
+            notifyAll(msg);
+            req->send(200, "application/json", success ? "{\"ok\":true}" : "{\"ok\":false}");
+            if(success) {
+                delay(1000);
+                ESP.restart();
+            }
+        },
+        // Odbiór danych
+        [](AsyncWebServerRequest* req, String filename,
+           size_t index, uint8_t* data, size_t len, bool final) {
+
+            if(index == 0) {
+                Serial.printf("OTA: Start - %s\n", filename.c_str());
+                otaInProgress = true;
+                if(!Update.begin(UPDATE_SIZE_UNKNOWN)) {
+                    Update.printError(Serial);
+                }
+            }
+
+            if(Update.write(data, len) != len) {
+                Update.printError(Serial);
+            }
+
+            // Progress
+            if(Update.size() > 0) {
+                int percent = (index + len) * 100 / req->contentLength();
+                showOTAOverlay(percent);
+                notifyAll("{\"type\":\"ota_progress\",\"percent\":" + String(percent) + "}");
+            }
+
+            if(final) {
+                if(Update.end(true)) {
+                    Serial.printf("OTA: Done - %u bytes\n", index + len);
+                } else {
+                    Update.printError(Serial);
+                }
+                otaInProgress = false;
+            }
+        }
+    );
+}
+
+// ============================================================
 // WIFI SETUP
 // ============================================================
 void setupWifi() {
-    // Zawsze startuj AP
     WiFi.mode(WIFI_AP_STA);
     WiFi.softAP(AP_SSID, AP_PASS);
     Serial.println("WiFi: AP started - " + String(AP_SSID));
 
-    // Jeśli mamy zapisane credentials - połącz do STA
     if(wifiSSID.length() > 0) {
         Serial.println("WiFi: Connecting to " + wifiSSID);
-
         showWifiOverlay("WiFi: " + wifiSSID, "", COLOR_GRAY);
 
         WiFi.begin(wifiSSID.c_str(), wifiPass.c_str());
-
         int tries = 0;
-        while(WiFi.status() != WL_CONNECTED && tries < 20) {
-            delay(500);
-            tries++;
-            Serial.print(".");
-        }
+        while(WiFi.status() != WL_CONNECTED && tries < 20) { delay(500); tries++; }
 
         if(WiFi.status() == WL_CONNECTED) {
             localIP      = WiFi.localIP().toString();
             staConnected = true;
-            Serial.println("\nWiFi: Connected! IP: " + localIP);
+            Serial.println("WiFi: Connected! IP: " + localIP);
             showWifiOverlay("WiFi: " + localIP, "AP: " + String(AP_IP), COLOR_GREEN);
         } else {
-            Serial.println("\nWiFi: Failed - running AP only");
+            Serial.println("WiFi: Failed - AP only");
             showWifiOverlay("WiFi: Failed", "AP: " + String(AP_IP), COLOR_RED);
         }
-        delay(3000);
-        clearOverlay();
     } else {
-        // Brak konfiguracji - pokaż info AP
-        Serial.println("WiFi: No STA config - AP only");
         showWifiOverlay("WiFi Setup: " + String(AP_SSID), AP_IP, COLOR_GREEN);
-        delay(3000);
-        clearOverlay();
     }
+    delay(3000);
+    clearOverlay();
 }
 
 // ============================================================
@@ -449,49 +737,38 @@ void setupWifi() {
 void setupServer() {
     ws.onEvent(onWSEvent);
     server.addHandler(&ws);
-
     server.on("/", HTTP_GET, [](AsyncWebServerRequest* req) {
         req->send_P(200, "text/html", INDEX_HTML);
     });
-
+    setupOTA();
     server.begin();
-    Serial.println("HTTP: Server started on port 80");
+    Serial.println("HTTP: Server started");
 }
 
 // ============================================================
-// IR - obsługa
+// IR
 // ============================================================
 void handleIR(uint32_t code) {
-    // Tryb nauki
     if(learningIR) {
         Serial.printf("IR learned: 0x%08X for %s\n", code, learningKey.c_str());
-
-        // Zapisz kod do odpowiedniego slotu
-        if(learningKey == "source") irCodes[0] = code;
+        if(learningKey == "source")      irCodes[0] = code;
         else if(learningKey == "input1") irCodes[1] = code;
         else if(learningKey == "input2") irCodes[2] = code;
         else if(learningKey == "input3") irCodes[3] = code;
         else if(learningKey == "input4") irCodes[4] = code;
-
         learningIR = false;
         clearOverlay();
-
-        // Powiadom stronę www
-        String msg = "{\"type\":\"ir_received\",\"key\":\"" + learningKey + "\"";
-        msg += ",\"code\":" + String(code) + "}";
+        String msg = "{\"type\":\"ir_received\",\"key\":\"" + learningKey + "\",\"code\":" + String(code) + "}";
         notifyAll(msg);
         return;
     }
 
-    // Normalny tryb - sprawdź kody
     if(code == irCodes[0] && irCodes[0] != 0) {
-        // Source - cyklicznie
         switchInput((currentInput + 1) % 4);
         notifyAll("{\"type\":\"input_changed\",\"input\":" + String(currentInput) + "}");
-    }
-    else {
+    } else {
         for(int i = 0; i < 4; i++) {
-            if(code == irCodes[i + 1] && irCodes[i + 1] != 0) {
+            if(code == irCodes[i+1] && irCodes[i+1] != 0) {
                 switchInput(i);
                 notifyAll("{\"type\":\"input_changed\",\"input\":" + String(currentInput) + "}");
                 break;
@@ -507,8 +784,17 @@ void setup() {
     Serial.begin(115200);
     delay(1000);
     Serial.println("\n╔═══════════════════════════════════════╗");
-    Serial.println("║      AUDIO SWITCHER v3.0              ║");
+    Serial.println("║      AUDIO SWITCHER v4.0              ║");
     Serial.println("╚═══════════════════════════════════════╝\n");
+
+    // Backlight PWM
+    ledcSetup(BL_CHANNEL, BL_FREQ, BL_RES);
+    ledcAttachPin(TFT_BL, BL_CHANNEL);
+    ledcWrite(BL_CHANNEL, BL_DEFAULT);
+
+    // Relay BT - domyślnie wyłączony
+    pinMode(RELAY_BT, OUTPUT);
+    digitalWrite(RELAY_BT, LOW);
 
     // Display
     tft.init(SCREEN_H, SCREEN_W);
@@ -519,6 +805,10 @@ void setup() {
 
     // NVS
     loadPrefs();
+    ledcWrite(BL_CHANNEL, brightness);
+    tft.setRotation(dispRotate ? 3 : 1);
+    tft.invertDisplay(dispInvert);
+    digitalWrite(RELAY_BT, currentInput == 1 ? HIGH : LOW);  // Przywróć stan BT
 
     // PT2314E
     Wire.begin(PT_SDA, PT_SCL);
@@ -529,18 +819,22 @@ void setup() {
     // IR
     irrecv.enableIRIn();
 
-    // Draw UI
+    // UI
     drawUI();
 
     // WiFi
     setupWifi();
 
-    // Web server
+    // Web server + OTA
     setupServer();
+
+    // MQTT (tylko gdy STA połączony)
+    if(staConnected) setupMqtt();
 
     Serial.println("\n✓ System Ready!");
     Serial.printf("  AP:  http://%s\n", AP_IP);
     if(staConnected) Serial.printf("  STA: http://%s\n", localIP.c_str());
+    if(mqttEnabled)  Serial.printf("  MQTT: %s:%d\n", mqttHost.c_str(), mqttPort);
 }
 
 // ============================================================
@@ -551,14 +845,12 @@ void loop() {
     if(learningIR && (millis() - learnStart > IR_LEARN_TIMEOUT)) {
         learningIR = false;
         clearOverlay();
-        String msg = "{\"type\":\"ir_timeout\",\"key\":\"" + learningKey + "\"}";
-        notifyAll(msg);
-        Serial.println("IR: Learning timeout for " + learningKey);
+        notifyAll("{\"type\":\"ir_timeout\",\"key\":\"" + learningKey + "\"}");
     }
 
     // IR receive
     decode_results results;
-    if(irrecv.decode(&results)) {
+    if(!otaInProgress && irrecv.decode(&results)) {
         unsigned long now = millis();
         if(now - lastIR > IR_DEBOUNCE) {
             if(results.value != 0xFFFFFFFF && results.value != 0) {
@@ -568,6 +860,9 @@ void loop() {
         }
         irrecv.resume();
     }
+
+    // MQTT reconnect
+    mqttReconnectIfNeeded();
 
     // WebSocket cleanup
     ws.cleanupClients();
