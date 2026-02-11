@@ -252,7 +252,100 @@
   .form-group input:focus {
     border-color: var(--green);
   }
-  .wifi-save-row {
+  /* BRIGHTNESS */
+  .brightness-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .brightness-icon {
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+  .brightness-val {
+    font-size: 13px;
+    color: var(--subtext);
+    width: 36px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+  input[type=range] {
+    flex: 1;
+    -webkit-appearance: none;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--border);
+    outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--green);
+    cursor: pointer;
+    box-shadow: 0 0 6px rgba(45,197,94,.4);
+  }
+
+  /* TOGGLE SWITCH */
+  .toggle-rows {
+    margin-top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-top: 1px solid var(--border);
+    cursor: pointer;
+    user-select: none;
+  }
+  .toggle-label {
+    font-size: 14px;
+    color: var(--text);
+  }
+  .toggle-switch {
+    position: relative;
+    width: 44px;
+    height: 24px;
+    flex-shrink: 0;
+  }
+  .toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+    position: absolute;
+  }
+  .toggle-slider {
+    position: absolute;
+    inset: 0;
+    background: var(--border);
+    border-radius: 24px;
+    transition: background .2s;
+    cursor: pointer;
+  }
+  .toggle-slider::before {
+    content: '';
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    left: 3px;
+    top: 3px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform .2s;
+  }
+  .toggle-switch input:checked + .toggle-slider {
+    background: var(--green);
+  }
+  .toggle-switch input:checked + .toggle-slider::before {
+    transform: translateX(20px);
+  }
+
+    .wifi-save-row {
     display: flex;
     justify-content: flex-end;
     gap: 10px;
@@ -280,6 +373,70 @@
   .toast.green { border-color: var(--green); color: var(--green); }
   .toast.red   { border-color: var(--red);   color: var(--red);   }
 
+
+  /* MQTT BADGE */
+  .mqtt-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--subtext);
+    padding: 6px 0;
+    border-top: 1px solid var(--border);
+    margin-top: 4px;
+  }
+  .mqtt-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--border);
+    flex-shrink: 0;
+    transition: background .3s;
+  }
+  .mqtt-dot.connected {
+    background: var(--green);
+    box-shadow: 0 0 5px var(--green);
+  }
+
+  /* OTA PROGRESS */
+  .ota-drop {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 28px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .2s, background .2s;
+  }
+  .ota-drop:hover, .ota-drop.dragover {
+    border-color: var(--green);
+    background: rgba(45,197,94,.05);
+  }
+  .ota-drop-icon { font-size: 28px; margin-bottom: 8px; }
+  .ota-drop-text { font-size: 14px; color: var(--subtext); }
+  .ota-drop-text span { color: var(--green); }
+  .ota-progress { display: none; margin-top: 16px; }
+  .ota-progress.visible { display: block; }
+  .ota-bar-wrap {
+    background: var(--surface2);
+    border-radius: 4px;
+    height: 8px;
+    overflow: hidden;
+    margin-bottom: 8px;
+  }
+  .ota-bar {
+    height: 100%;
+    width: 0%;
+    background: var(--green);
+    border-radius: 4px;
+    transition: width .2s;
+  }
+  .ota-status { font-size: 13px; color: var(--subtext); text-align: center; }
+
+  /* FORM ROW (host:port obok siebie) */
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 90px;
+    gap: 10px;
+  }
   /* STATUS BAR */
   .status-bar {
     background: #000;
@@ -373,7 +530,37 @@
     </div>
   </div>
 
-  <!-- WIFI SETTINGS -->
+  <!-- DISPLAY -->
+  <div class="card">
+    <div class="card-header">Display</div>
+    <div class="card-body">
+      <div class="brightness-row">
+        <span class="brightness-icon">🔅</span>
+        <input type="range" id="brightness" min="10" max="255" value="200"
+               oninput="onBrightnessChange(this.value)">
+        <span class="brightness-icon">🔆</span>
+        <span class="brightness-val" id="brightness-val">78%</span>
+      </div>
+      <div class="toggle-rows">
+        <label class="toggle-row">
+          <span class="toggle-label">Invert colors</span>
+          <div class="toggle-switch">
+            <input type="checkbox" id="disp-invert" onchange="onInvertChange(this.checked)">
+            <span class="toggle-slider"></span>
+          </div>
+        </label>
+        <label class="toggle-row">
+          <span class="toggle-label">Rotate 180°</span>
+          <div class="toggle-switch">
+            <input type="checkbox" id="disp-rotate" onchange="onRotateChange(this.checked)">
+            <span class="toggle-slider"></span>
+          </div>
+        </label>
+      </div>
+    </div>
+  </div>
+
+    <!-- WIFI SETTINGS -->
   <div class="card">
     <div class="card-header">WiFi Settings</div>
     <div class="card-body">
@@ -390,6 +577,69 @@
           <button class="btn btn-gray" onclick="testWifi()">Test</button>
           <button class="btn btn-green" onclick="saveWifi()">Save &amp; Restart</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- MQTT -->
+  <div class="card">
+    <div class="card-header">MQTT</div>
+    <div class="card-body">
+      <div class="wifi-form">
+        <div class="form-group">
+          <label>Enable</label>
+          <div class="toggle-switch" style="margin-top:4px">
+            <input type="checkbox" id="mqtt-enabled" onchange="onMqttEnabledChange(this.checked)">
+            <span class="toggle-slider"></span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Broker</label>
+          <div class="form-row">
+            <input type="text"   id="mqtt-host" placeholder="192.168.1.10">
+            <input type="number" id="mqtt-port" placeholder="1883" value="1883" min="1" max="65535">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Username</label>
+          <input type="text" id="mqtt-user" placeholder="optional">
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="mqtt-pass" placeholder="optional">
+        </div>
+        <div class="form-group">
+          <label>Base Topic</label>
+          <input type="text" id="mqtt-topic" placeholder="audio_switcher" value="audio_switcher">
+        </div>
+        <div class="mqtt-badge">
+          <div class="mqtt-dot" id="mqtt-dot"></div>
+          <span id="mqtt-status-text">disconnected</span>
+        </div>
+        <div class="wifi-save-row">
+          <button class="btn btn-green" onclick="saveMqtt()">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FIRMWARE UPDATE -->
+  <div class="card">
+    <div class="card-header">Firmware Update</div>
+    <div class="card-body">
+      <div class="ota-drop" id="ota-drop"
+           onclick="document.getElementById('ota-file').click()"
+           ondragover="otaDragOver(event)"
+           ondragleave="otaDragLeave(event)"
+           ondrop="otaDrop(event)">
+        <div class="ota-drop-icon">📦</div>
+        <div class="ota-drop-text">Drop <span>.bin</span> file here or <span>click to browse</span></div>
+      </div>
+      <input type="file" id="ota-file" accept=".bin" style="display:none" onchange="otaFileSelected(this)">
+      <div class="ota-progress" id="ota-progress">
+        <div class="ota-bar-wrap"><div class="ota-bar" id="ota-bar"></div></div>
+        <div class="ota-status" id="ota-status">Uploading...</div>
       </div>
     </div>
   </div>
@@ -450,6 +700,25 @@ function handleMessage(msg) {
       if (msg.wifi_ssid) {
         document.getElementById('wifi-ssid').value = msg.wifi_ssid;
       }
+      if (msg.brightness !== undefined) {
+        const slider = document.getElementById('brightness');
+        slider.value = msg.brightness;
+        document.getElementById('brightness-val').textContent =
+          Math.round(msg.brightness / 255 * 100) + '%';
+      }
+      if (msg.disp_invert !== undefined) {
+        document.getElementById('disp-invert').checked = msg.disp_invert;
+      }
+      if (msg.disp_rotate !== undefined) {
+        document.getElementById('disp-rotate').checked = msg.disp_rotate;
+      }
+      if (msg.mqtt_host)    document.getElementById('mqtt-host').value    = msg.mqtt_host;
+      if (msg.mqtt_port)    document.getElementById('mqtt-port').value    = msg.mqtt_port;
+      if (msg.mqtt_user)    document.getElementById('mqtt-user').value    = msg.mqtt_user;
+      if (msg.mqtt_topic)   document.getElementById('mqtt-topic').value   = msg.mqtt_topic;
+      if (msg.mqtt_enabled !== undefined)
+        document.getElementById('mqtt-enabled').checked = msg.mqtt_enabled;
+      setMqttStatus(msg.mqtt_connected === true);
       break;
 
     case 'input_changed':
@@ -486,6 +755,33 @@ function handleMessage(msg) {
     case 'wifi_test_fail':
       showToast('WiFi connection failed!', 'red');
       break;
+
+    case 'mqtt_connected':
+      setMqttStatus(true);
+      break;
+
+    case 'mqtt_disconnected':
+      setMqttStatus(false);
+      break;
+
+    case 'mqtt_saved':
+      showToast('MQTT saved!', 'green');
+      break;
+
+    case 'ota_progress':
+      setOtaProgress(msg.percent, 'Uploading... ' + msg.percent + '%');
+      break;
+
+    case 'ota_ok':
+      setOtaProgress(100, 'Done! Restarting...');
+      showToast('Firmware updated!', 'green');
+      break;
+
+    case 'ota_fail':
+      setOtaProgress(0, 'Update failed!');
+      showToast('OTA failed!', 'red');
+      break;
+
   }
 }
 
@@ -572,6 +868,27 @@ function saveIR() {
 }
 
 // ============================================================
+// BRIGHTNESS
+// ============================================================
+let brightnessTimer = null;
+function onBrightnessChange(val) {
+  document.getElementById('brightness-val').textContent =
+    Math.round(val / 255 * 100) + '%';
+  clearTimeout(brightnessTimer);
+  brightnessTimer = setTimeout(() => {
+    send({type: 'set_brightness', value: parseInt(val)});
+  }, 100);
+}
+
+function onInvertChange(checked) {
+  send({type: 'set_invert', value: checked});
+}
+
+function onRotateChange(checked) {
+  send({type: 'set_rotate', value: checked});
+}
+
+// ============================================================
 // WIFI
 // ============================================================
 function saveWifi() {
@@ -587,6 +904,99 @@ function testWifi() {
   if (!ssid) { showToast('Enter SSID!', 'red'); return; }
   send({type: 'test_wifi', ssid: ssid, pass: pass});
   showToast('Testing WiFi...', '');
+}
+
+// ============================================================
+// MQTT
+// ============================================================
+function setMqttStatus(connected) {
+  const dot  = document.getElementById('mqtt-dot');
+  const text = document.getElementById('mqtt-status-text');
+  dot.classList.toggle('connected', connected);
+  text.textContent = connected ? 'connected' : 'disconnected';
+}
+
+function onMqttEnabledChange(checked) {
+  // Tylko lokalna zmiana - zapis przez Save
+}
+
+function saveMqtt() {
+  send({
+    type:    'save_mqtt',
+    host:    document.getElementById('mqtt-host').value.trim(),
+    port:    parseInt(document.getElementById('mqtt-port').value) || 1883,
+    user:    document.getElementById('mqtt-user').value.trim(),
+    pass:    document.getElementById('mqtt-pass').value,
+    topic:   document.getElementById('mqtt-topic').value.trim() || 'audio_switcher',
+    enabled: document.getElementById('mqtt-enabled').checked,
+  });
+}
+
+// ============================================================
+// OTA
+// ============================================================
+function setOtaProgress(percent, status) {
+  document.getElementById('ota-progress').classList.add('visible');
+  document.getElementById('ota-bar').style.width = percent + '%';
+  document.getElementById('ota-status').textContent = status;
+}
+
+function otaDragOver(e) {
+  e.preventDefault();
+  document.getElementById('ota-drop').classList.add('dragover');
+}
+function otaDragLeave(e) {
+  document.getElementById('ota-drop').classList.remove('dragover');
+}
+function otaDrop(e) {
+  e.preventDefault();
+  otaDragLeave(e);
+  const file = e.dataTransfer.files[0];
+  if(file) otaUpload(file);
+}
+function otaFileSelected(input) {
+  if(input.files[0]) otaUpload(input.files[0]);
+}
+
+function otaUpload(file) {
+  if(!file.name.endsWith('.bin')) {
+    showToast('Select a .bin file!', 'red');
+    return;
+  }
+  setOtaProgress(0, 'Uploading...');
+  showToast('Uploading firmware...', '');
+
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', '/update');
+
+  xhr.upload.onprogress = (e) => {
+    if(e.lengthComputable) {
+      const pct = Math.round(e.loaded / e.total * 100);
+      setOtaProgress(pct, 'Uploading... ' + pct + '%');
+    }
+  };
+  xhr.onload = () => {
+    try {
+      const res = JSON.parse(xhr.responseText);
+      if(res.ok) {
+        setOtaProgress(100, 'Done! Restarting...');
+        showToast('Firmware updated! Restarting...', 'green');
+      } else {
+        setOtaProgress(0, 'Update failed!');
+        showToast('OTA failed!', 'red');
+      }
+    } catch(e) {
+      setOtaProgress(0, 'Error!');
+    }
+  };
+  xhr.onerror = () => {
+    setOtaProgress(0, 'Connection error!');
+    showToast('OTA connection error!', 'red');
+  };
+
+  const fd = new FormData();
+  fd.append('firmware', file, file.name);
+  xhr.send(fd);
 }
 
 // ============================================================
