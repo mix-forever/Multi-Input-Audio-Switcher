@@ -25,8 +25,8 @@ import base64
 # ============================================================
 
 # Rozmiar ikon kafelków
-ICON_W = 40
-ICON_H = 40
+ICON_W = 56
+ICON_H = 56
 
 # Rozmiar bootlogo (pełny ekran ST7789)
 LOGO_W = 284
@@ -34,10 +34,10 @@ LOGO_H = 76
 
 # Ikony kafelków: plik → nazwa zmiennej C++
 ICONS = {
-    "tv":    "tv",
-    "bt":    "bt",
-    "radio": "radio",
-    "other": "other",
+    "input1": "input1",
+    "input2": "input2",
+    "input3": "input3",
+    "input4": "input4",
 }
 
 # Pliki wyjściowe
@@ -259,6 +259,9 @@ def convert_logo():
     return True
 
 # ============================================================
+# MAIN
+# ============================================================
+# ============================================================
 # GENEROWANIE web.h - HTML + base64 obrazki z PNG
 # ============================================================
 def generate_web_h():
@@ -277,10 +280,10 @@ def generate_web_h():
     # Sprawdź czy HTML ma placeholdery
     placeholders = {
         "{{LOGO_B64}}":  "logo",
-        "{{TV_B64}}":    "tv",
-        "{{BT_B64}}":    "bt",
-        "{{RADIO_B64}}": "radio",
-        "{{OTHER_B64}}": "other",
+        "{{INPUT1_B64}}": "input1",
+        "{{INPUT2_B64}}": "input2",
+        "{{INPUT3_B64}}": "input3",
+        "{{INPUT4_B64}}": "input4",
     }
 
     # Zamień placeholdery na base64
@@ -339,9 +342,7 @@ def generate_web_h():
     print(f"  Output: {WEB_OUTPUT}")
     print(f"  ✓ OK")
     return True
-# ============================================================
-# MAIN
-# ============================================================
+
 
 def main():
     print("\n" + "=" * 60)

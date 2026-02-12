@@ -65,21 +65,18 @@
     50%      { opacity: 0.4; }
   }
 
-  /* MAIN CONTENT */
+  /* MAIN */
   main {
     max-width: 600px;
     margin: 0 auto;
-    padding: 24px 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
+    padding: 16px;
   }
 
-  /* SECTION CARD */
+  /* CARD */
   .card {
     background: var(--surface);
-    border: 1px solid var(--border);
     border-radius: var(--radius);
+    margin-bottom: 16px;
     overflow: hidden;
   }
   .card-header {
@@ -93,14 +90,14 @@
     background: #000;
   }
   .card-body {
-    padding: 20px;
+    padding: 16px;
   }
 
-  /* INPUTS */
+  /* INPUTS GRID */
   .inputs-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
+    gap: 10px;
   }
   .input-tile {
     aspect-ratio: 1;
@@ -148,165 +145,103 @@
   .input-tile.active span {
     color: var(--green);
   }
-
-  /* REMOTE / IR */
-  .ir-rows {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-  .ir-row {
+  .input-relay {
     display: flex;
     align-items: center;
-    gap: 12px;
-  }
-  .ir-label {
-    width: 80px;
-    font-size: 13px;
-    color: var(--subtext);
-    flex-shrink: 0;
-  }
-  .ir-code {
-    flex: 1;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 9px 14px;
-    font-family: 'Courier New', monospace;
-    font-size: 13px;
-    color: var(--text);
-    min-width: 0;
-  }
-  .ir-code.learning {
-    border-color: var(--green);
-    color: var(--green);
-    animation: blink-border 0.6s infinite;
-  }
-  @keyframes blink-border {
-    0%,100% { border-color: var(--green); }
-    50%      { border-color: transparent; }
-  }
-  .btn {
-    padding: 9px 16px;
-    border: none;
-    border-radius: 8px;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: opacity .2s, transform .1s;
-    white-space: nowrap;
-  }
-  .btn:hover  { opacity: 0.85; }
-  .btn:active { transform: scale(0.96); }
-  .btn-green  { background: var(--green); color: #000; }
-  .btn-red    { background: var(--red);   color: #fff; }
-  .btn-gray   { background: #000; color: var(--text); border: 1px solid var(--border); }
-  .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
-
-  /* COUNTDOWN */
-  .countdown {
-    font-size: 12px;
-    color: var(--green);
-    width: 32px;
-    text-align: center;
-    flex-shrink: 0;
-    display: none;
-  }
-  .countdown.visible { display: block; }
-
-  /* IR SAVE */
-  .ir-save-row {
-    margin-top: 8px;
-    display: flex;
-    justify-content: flex-end;
-  }
-
-  /* WIFI SETTINGS */
-  .wifi-form {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-  }
-  .form-group {
-    display: flex;
-    flex-direction: column;
     gap: 6px;
+    font-size: 13px;
+    cursor: pointer;
   }
-  .form-group label {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--subtext);
-    letter-spacing: 0.8px;
-    text-transform: uppercase;
+  .input-relay input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
   }
-  .form-group input {
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 10px 14px;
-    font-size: 14px;
-    color: var(--text);
-    outline: none;
-    transition: border-color .2s;
-  }
-  .form-group input:focus {
-    border-color: var(--green);
-  }
-  /* BRIGHTNESS */
+
+  /* BRIGHTNESS ROW */
   .brightness-row {
     display: flex;
     align-items: center;
     gap: 12px;
   }
   .brightness-icon {
-    font-size: 18px;
+    font-size: 20px;
     flex-shrink: 0;
   }
-  .brightness-val {
-    font-size: 13px;
-    color: var(--subtext);
-    width: 36px;
-    text-align: right;
-    flex-shrink: 0;
-  }
-  input[type=range] {
+  .brightness-row input[type="range"] {
     flex: 1;
-    -webkit-appearance: none;
-    height: 4px;
-    border-radius: 2px;
-    background: var(--border);
+    height: 6px;
+    border-radius: 3px;
+    background: var(--surface2);
     outline: none;
+    -webkit-appearance: none;
   }
-  input[type=range]::-webkit-slider-thumb {
+  .brightness-row input[type="range"]::-webkit-slider-thumb {
     -webkit-appearance: none;
     width: 18px;
     height: 18px;
     border-radius: 50%;
     background: var(--green);
     cursor: pointer;
-    box-shadow: 0 0 6px rgba(45,197,94,.4);
+  }
+  .brightness-row input[type="range"]::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--green);
+    border: none;
+    cursor: pointer;
+  }
+  .brightness-val {
+    min-width: 100px;
+    text-align: right;
+    font-size: 13px;
+    color: var(--subtext);
   }
 
-  /* TOGGLE SWITCH */
+  /* TOGGLE */
   .toggle-rows {
-    margin-top: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+    margin-top: 12px;
   }
   .toggle-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 10px 0;
-    border-top: 1px solid var(--border);
     cursor: pointer;
-    user-select: none;
   }
   .toggle-label {
     font-size: 14px;
-    color: var(--text);
   }
+  .toggle-cb {
+    width: 44px;
+    height: 24px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--surface2);
+    border-radius: 12px;
+    position: relative;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .toggle-cb:checked {
+    background: var(--green);
+  }
+  .toggle-cb::before {
+    content: '';
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: white;
+    top: 3px;
+    left: 3px;
+    transition: left 0.2s;
+  }
+  .toggle-cb:checked::before {
+    left: 23px;
+  }
+
   .toggle-switch {
     position: relative;
     width: 44px;
@@ -345,107 +280,160 @@
     transform: translateX(20px);
   }
 
-    .wifi-save-row {
+
+  /* IR REMOTE */
+  .ir-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .ir-row {
+    display: grid;
+    grid-template-columns: 70px 1fr 45px 60px 60px;
+    gap: 8px;
+    align-items: center;
+  }
+  .ir-label {
+    font-size: 13px;
+    color: var(--subtext);
+  }
+  .ir-code {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 12px;
+    font-family: monospace;
+    color: var(--text);
+  }
+  .countdown {
+    font-size: 12px;
+    color: var(--green);
+    text-align: center;
+  }
+  .ir-save-row {
+    margin-top: 12px;
     display: flex;
     justify-content: flex-end;
+  }
+
+  /* BUTTONS */
+  .btn {
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: none;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  .btn:hover {
+    opacity: 0.85;
+  }
+  .btn-green {
+    background: var(--green);
+    color: white;
+  }
+  .btn-gray {
+    background: var(--surface2);
+    color: var(--text);
+  }
+  .btn-red {
+    background: var(--red);
+    color: white;
+  }
+
+  /* WIFI */
+  .wifi-form {
+    display: flex;
+    flex-direction: column;
     gap: 10px;
-    margin-top: 4px;
+  }
+  .wifi-input {
+    width: 100%;
+    padding: 10px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 14px;
+  }
+  .wifi-input::placeholder {
+    color: var(--subtext);
+  }
+  .wifi-buttons {
+    display: flex;
+    gap: 8px;
+  }
+  .wifi-buttons button {
+    flex: 1;
+  }
+  .wifi-status {
+    padding: 8px;
+    border-radius: 6px;
+    font-size: 13px;
+    text-align: center;
+  }
+
+  /* OTA */
+  .ota-drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 40px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s;
+  }
+  .ota-drop-zone:hover {
+    border-color: var(--green);
+  }
+  .ota-icon {
+    font-size: 48px;
+    margin-bottom: 12px;
+  }
+  .ota-text {
+    font-size: 14px;
+    color: var(--subtext);
+  }
+  .ota-progress {
+    margin-top: 16px;
+  }
+  .ota-bar {
+    height: 8px;
+    background: var(--surface2);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .ota-fill {
+    height: 100%;
+    background: var(--green);
+    width: 0%;
+    transition: width 0.3s;
+  }
+  .ota-percent {
+    text-align: center;
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--subtext);
   }
 
   /* TOAST */
   .toast {
     position: fixed;
-    bottom: 24px;
+    bottom: 20px;
     left: 50%;
-    transform: translateX(-50%) translateY(80px);
-    background: #000;
+    transform: translateX(-50%);
+    background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 12px 24px;
+    border-radius: 8px;
+    padding: 12px 20px;
     font-size: 14px;
-    transition: transform .3s ease;
-    z-index: 999;
-    white-space: nowrap;
+    z-index: 1000;
+    animation: slideUp 0.3s;
   }
-  .toast.show {
-    transform: translateX(-50%) translateY(0);
-  }
-  .toast.green { border-color: var(--green); color: var(--green); }
-  .toast.red   { border-color: var(--red);   color: var(--red);   }
-
-
-  /* MQTT BADGE */
-  .mqtt-badge {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 12px;
-    color: var(--subtext);
-    padding: 6px 0;
-    border-top: 1px solid var(--border);
-    margin-top: 4px;
-  }
-  .mqtt-dot {
-    width: 7px; height: 7px;
-    border-radius: 50%;
-    background: var(--border);
-    flex-shrink: 0;
-    transition: background .3s;
-  }
-  .mqtt-dot.connected {
-    background: var(--green);
-    box-shadow: 0 0 5px var(--green);
-  }
-
-  /* OTA PROGRESS */
-  .ota-drop {
-    border: 2px dashed var(--border);
-    border-radius: 10px;
-    padding: 28px 20px;
-    text-align: center;
-    cursor: pointer;
-    transition: border-color .2s, background .2s;
-  }
-  .ota-drop:hover, .ota-drop.dragover {
-    border-color: var(--green);
-    background: rgba(45,197,94,.05);
-  }
-  .ota-drop-icon { font-size: 28px; margin-bottom: 8px; }
-  .ota-drop-text { font-size: 14px; color: var(--subtext); }
-  .ota-drop-text span { color: var(--green); }
-  .ota-progress { display: none; margin-top: 16px; }
-  .ota-progress.visible { display: block; }
-  .ota-bar-wrap {
-    background: var(--surface2);
-    border-radius: 4px;
-    height: 8px;
-    overflow: hidden;
-    margin-bottom: 8px;
-  }
-  .ota-bar {
-    height: 100%;
-    width: 0%;
-    background: var(--green);
-    border-radius: 4px;
-    transition: width .2s;
-  }
-  .ota-status { font-size: 13px; color: var(--subtext); text-align: center; }
-
-  /* FORM ROW (host:port obok siebie) */
-  .form-row {
-    display: grid;
-    grid-template-columns: 1fr 90px;
-    gap: 10px;
-  }
-  /* STATUS BAR */
-  .status-bar {
-    background: #000;
-    border-top: 1px solid var(--border);
-    padding: 8px 20px;
-    font-size: 11px;
-    color: var(--subtext);
-    display: flex;
-    justify-content: space-between;
+  @keyframes slideUp {
+    from { bottom: -50px; opacity: 0; }
+    to { bottom: 20px; opacity: 1; }
   }
 </style>
 </head>
@@ -465,67 +453,97 @@
 
   <!-- INPUTS -->
   <div class="card">
-    <div class="card-header">Inputs</div>
+    <div class="card-header">Input Selection</div>
     <div class="card-body">
       <div class="inputs-grid">
         <div class="input-tile" id="tile-0" onclick="selectInput(0)">
-          <img src="data:image/png;base64,{{TV_B64}}" alt="TV">
-          <span>TV</span>
+          <img src="data:image/png;base64,{{INPUT1_B64}}" alt="Input1">
+          <span>Input1</span>
         </div>
         <div class="input-tile" id="tile-1" onclick="selectInput(1)">
-          <img src="data:image/png;base64,{{BT_B64}}" alt="BT">
-          <span>BT</span>
+          <img src="data:image/png;base64,{{INPUT2_B64}}" alt="Input2">
+          <span>Input2</span>
         </div>
         <div class="input-tile" id="tile-2" onclick="selectInput(2)">
-          <img src="data:image/png;base64,{{RADIO_B64}}" alt="NET">
-          <span>NET</span>
+          <img src="data:image/png;base64,{{INPUT3_B64}}" alt="Input3">
+          <span>Input3</span>
         </div>
         <div class="input-tile" id="tile-3" onclick="selectInput(3)">
-          <img src="data:image/png;base64,{{OTHER_B64}}" alt="RES">
-          <span>RES</span>
+          <img src="data:image/png;base64,{{INPUT4_B64}}" alt="Input4">
+          <span>Input4</span>
         </div>
       </div>
-    </div>
+
+      <!-- Relay checkboxes + Save button -->
+      <div style="margin-top:16px; padding-top:16px; border-top:1px solid var(--border);">
+        <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:12px;">
+          <label class="toggle-row" style="flex-direction:column; gap:6px; padding:8px 0; border:none;">
+            <span class="toggle-label" style="font-size:12px;">Relay 1</span>
+            <div class="toggle-switch">
+              <input type="checkbox" id="relay-0">
+              <span class="toggle-slider" onclick="toggleRelay(0)"></span>
+            </div>
+          </label>
+          <label class="toggle-row" style="flex-direction:column; gap:6px; padding:8px 0; border:none;">
+            <span class="toggle-label" style="font-size:12px;">Relay 2</span>
+            <div class="toggle-switch">
+              <input type="checkbox" id="relay-1">
+              <span class="toggle-slider" onclick="toggleRelay(1)"></span>
+            </div>
+          </label>
+          <label class="toggle-row" style="flex-direction:column; gap:6px; padding:8px 0; border:none;">
+            <span class="toggle-label" style="font-size:12px;">Relay 3</span>
+            <div class="toggle-switch">
+              <input type="checkbox" id="relay-2">
+              <span class="toggle-slider" onclick="toggleRelay(2)"></span>
+            </div>
+          </label>
+          <label class="toggle-row" style="flex-direction:column; gap:6px; padding:8px 0; border:none;">
+            <span class="toggle-label" style="font-size:12px;">Relay 4</span>
+            <div class="toggle-switch">
+              <input type="checkbox" id="relay-3">
+              <span class="toggle-slider" onclick="toggleRelay(3)"></span>
+            </div>
+          </label>
+        </div>
+      </div>
   </div>
 
-  <!-- REMOTE -->
+  <!-- AUDIO -->
   <div class="card">
-    <div class="card-header">Remote Control — IR Codes</div>
+    <div class="card-header">Audio</div>
     <div class="card-body">
-      <div class="ir-rows">
-        <div class="ir-row">
-          <span class="ir-label">Source</span>
-          <input class="ir-code" id="ir-source" type="text" readonly placeholder="not set">
-          <span class="countdown" id="cd-source"></span>
-          <button class="btn btn-gray" onclick="learnIR('source')">Learn</button>
-        </div>
-        <div class="ir-row">
-          <span class="ir-label">Input 1 — TV</span>
-          <input class="ir-code" id="ir-input1" type="text" readonly placeholder="not set">
-          <span class="countdown" id="cd-input1"></span>
-          <button class="btn btn-gray" onclick="learnIR('input1')">Learn</button>
-        </div>
-        <div class="ir-row">
-          <span class="ir-label">Input 2 — BT</span>
-          <input class="ir-code" id="ir-input2" type="text" readonly placeholder="not set">
-          <span class="countdown" id="cd-input2"></span>
-          <button class="btn btn-gray" onclick="learnIR('input2')">Learn</button>
-        </div>
-        <div class="ir-row">
-          <span class="ir-label">Input 3 — NET</span>
-          <input class="ir-code" id="ir-input3" type="text" readonly placeholder="not set">
-          <span class="countdown" id="cd-input3"></span>
-          <button class="btn btn-gray" onclick="learnIR('input3')">Learn</button>
-        </div>
-        <div class="ir-row">
-          <span class="ir-label">Input 4 — RES</span>
-          <input class="ir-code" id="ir-input4" type="text" readonly placeholder="not set">
-          <span class="countdown" id="cd-input4"></span>
-          <button class="btn btn-gray" onclick="learnIR('input4')">Learn</button>
+      <!-- Volume -->
+      <div style="margin-bottom:16px;">
+        <span class="brightness-val" id="volume-val" style="display:block;margin-bottom:6px;">VOLUME: 100%</span>
+        <div class="brightness-row">
+          <span class="brightness-icon">🔇</span>
+          <input type="range" id="audio-volume" min="0" max="63" value="0" style="direction:rtl"
+                 oninput="onVolumeChange(this.value)">
+          <span class="brightness-icon">🔊</span>
         </div>
       </div>
-      <div class="ir-save-row">
-        <button class="btn btn-green" onclick="saveIR()">Save IR Codes</button>
+      
+      <!-- Bass -->
+      <div style="margin-bottom:16px;">
+        <span class="brightness-val" id="bass-val" style="display:block;margin-bottom:6px;">BASS: 0</span>
+        <div class="brightness-row">
+          <span class="brightness-icon" style="font-size:16px;">−</span>
+          <input type="range" id="audio-bass" min="-14" max="14" value="0"
+                 oninput="onBassChange(this.value)">
+          <span class="brightness-icon" style="font-size:16px;">+</span>
+        </div>
+      </div>
+      
+      <!-- Treble -->
+      <div style="margin-bottom:0;">
+        <span class="brightness-val" id="treble-val" style="display:block;margin-bottom:6px;">TREBLE: 0</span>
+        <div class="brightness-row">
+          <span class="brightness-icon" style="font-size:16px;">−</span>
+          <input type="range" id="audio-treble" min="-14" max="14" value="0"
+                 oninput="onTrebleChange(this.value)">
+          <span class="brightness-icon" style="font-size:16px;">+</span>
+        </div>
       </div>
     </div>
   </div>
@@ -545,14 +563,14 @@
         <label class="toggle-row">
           <span class="toggle-label">Invert colors</span>
           <div class="toggle-switch">
-            <input type="checkbox" id="disp-invert" onchange="onInvertChange(this.checked)">
+            <input type="checkbox" id="disp-invert" onchange="onDispInvertChange(this.checked)">
             <span class="toggle-slider"></span>
           </div>
         </label>
         <label class="toggle-row">
           <span class="toggle-label">Rotate 180°</span>
           <div class="toggle-switch">
-            <input type="checkbox" id="disp-rotate" onchange="onRotateChange(this.checked)">
+            <input type="checkbox" id="disp-rotate" onchange="onDispRotateChange(this.checked)">
             <span class="toggle-slider"></span>
           </div>
         </label>
@@ -560,66 +578,118 @@
     </div>
   </div>
 
-    <!-- WIFI SETTINGS -->
+  <!-- REMOTE -->
   <div class="card">
-    <div class="card-header">WiFi Settings</div>
+    <div class="card-header">Remote Control — IR Codes</div>
     <div class="card-body">
-      <div class="wifi-form">
-        <div class="form-group">
-          <label>Network SSID</label>
-          <input type="text" id="wifi-ssid" placeholder="Your WiFi network name">
+      <div class="ir-rows">
+        <div class="ir-row">
+          <span class="ir-label">Source</span>
+          <input class="ir-code" id="ir-source" type="text" readonly placeholder="not set">
+          <span class="countdown" id="cd-source"></span>
+          <button class="btn btn-gray" onclick="learnIR('source')">Learn</button>
+          <button class="btn btn-red" onclick="clearIR('source')">Clear</button>
         </div>
-        <div class="form-group">
-          <label>Password</label>
-          <input type="password" id="wifi-pass" placeholder="WiFi password">
+        <div class="ir-row">
+          <span class="ir-label">Input 1</span>
+          <input class="ir-code" id="ir-input1" type="text" readonly placeholder="not set">
+          <span class="countdown" id="cd-input1"></span>
+          <button class="btn btn-gray" onclick="learnIR('input1')">Learn</button>
+          <button class="btn btn-red" onclick="clearIR('input1')">Clear</button>
         </div>
-        <div class="wifi-save-row">
-          <button class="btn btn-gray" onclick="testWifi()">Test</button>
-          <button class="btn btn-green" onclick="saveWifi()">Save &amp; Restart</button>
+        <div class="ir-row">
+          <span class="ir-label">Input 2</span>
+          <input class="ir-code" id="ir-input2" type="text" readonly placeholder="not set">
+          <span class="countdown" id="cd-input2"></span>
+          <button class="btn btn-gray" onclick="learnIR('input2')">Learn</button>
+          <button class="btn btn-red" onclick="clearIR('input2')">Clear</button>
         </div>
+        <div class="ir-row">
+          <span class="ir-label">Input 3</span>
+          <input class="ir-code" id="ir-input3" type="text" readonly placeholder="not set">
+          <span class="countdown" id="cd-input3"></span>
+          <button class="btn btn-gray" onclick="learnIR('input3')">Learn</button>
+          <button class="btn btn-red" onclick="clearIR('input3')">Clear</button>
+        </div>
+        <div class="ir-row">
+          <span class="ir-label">Input 4</span>
+          <input class="ir-code" id="ir-input4" type="text" readonly placeholder="not set">
+          <span class="countdown" id="cd-input4"></span>
+          <button class="btn btn-gray" onclick="learnIR('input4')">Learn</button>
+          <button class="btn btn-red" onclick="clearIR('input4')">Clear</button>
+        </div>
+        <div class="ir-row">
+          <span class="ir-label">Vol +</span>
+          <input class="ir-code" id="ir-volp" type="text" readonly placeholder="not set">
+          <span class="countdown" id="cd-volp"></span>
+          <button class="btn btn-gray" onclick="learnIR('volp')">Learn</button>
+          <button class="btn btn-red" onclick="clearIR('volp')">Clear</button>
+        </div>
+        <div class="ir-row">
+          <span class="ir-label">Vol −</span>
+          <input class="ir-code" id="ir-volm" type="text" readonly placeholder="not set">
+          <span class="countdown" id="cd-volm"></span>
+          <button class="btn btn-gray" onclick="learnIR('volm')">Learn</button>
+          <button class="btn btn-red" onclick="clearIR('volm')">Clear</button>
+        </div>
+        <div class="ir-row">
+          <span class="ir-label">↑ Up</span>
+          <input class="ir-code" id="ir-up" type="text" readonly placeholder="not set">
+          <span class="countdown" id="cd-up"></span>
+          <button class="btn btn-gray" onclick="learnIR('up')">Learn</button>
+          <button class="btn btn-red" onclick="clearIR('up')">Clear</button>
+        </div>
+        <div class="ir-row">
+          <span class="ir-label">↓ Down</span>
+          <input class="ir-code" id="ir-down" type="text" readonly placeholder="not set">
+          <span class="countdown" id="cd-down"></span>
+          <button class="btn btn-gray" onclick="learnIR('down')">Learn</button>
+          <button class="btn btn-red" onclick="clearIR('down')">Clear</button>
+        </div>
+      </div>
+      <div class="ir-save-row">
+        <button class="btn btn-green" onclick="saveIR()">Save IR Codes</button>
       </div>
     </div>
   </div>
 
+  <!-- WIFI -->
+  <div class="card">
+    <div class="card-header">WiFi</div>
+    <div class="card-body">
+      <div class="wifi-form">
+        <input type="text" id="wifi-ssid" placeholder="SSID" class="wifi-input">
+        <input type="password" id="wifi-pass" placeholder="Password" class="wifi-input">
+        <div class="wifi-buttons">
+          <button class="btn btn-gray" onclick="testWifi()">Test</button>
+          <button class="btn btn-green" onclick="saveWifi()">Save & Reboot</button>
+        </div>
+        <div id="wifi-status" class="wifi-status"></div>
+      </div>
+    </div>
+  </div>
 
   <!-- MQTT -->
   <div class="card">
     <div class="card-header">MQTT</div>
     <div class="card-body">
-      <div class="wifi-form">
-        <div class="form-group">
-          <label>Enable</label>
-          <div class="toggle-switch" style="margin-top:4px">
-            <input type="checkbox" id="mqtt-enabled" onchange="onMqttEnabledChange(this.checked)">
-            <span class="toggle-slider"></span>
-          </div>
+      <label class="toggle-row">
+        <span class="toggle-label">Enable MQTT</span>
+        <div class="toggle-switch">
+          <input type="checkbox" id="mqtt-enable" onchange="onMqttEnableChange(this.checked)">
+          <span class="toggle-slider"></span>
         </div>
-        <div class="form-group">
-          <label>Broker</label>
-          <div class="form-row">
-            <input type="text"   id="mqtt-host" placeholder="192.168.1.10">
-            <input type="number" id="mqtt-port" placeholder="1883" value="1883" min="1" max="65535">
-          </div>
-        </div>
-        <div class="form-group">
-          <label>Username</label>
-          <input type="text" id="mqtt-user" placeholder="optional">
-        </div>
-        <div class="form-group">
-          <label>Password</label>
-          <input type="password" id="mqtt-pass" placeholder="optional">
-        </div>
-        <div class="form-group">
-          <label>Base Topic</label>
-          <input type="text" id="mqtt-topic" placeholder="audio_switcher" value="audio_switcher">
-        </div>
-        <div class="mqtt-badge">
-          <div class="mqtt-dot" id="mqtt-dot"></div>
-          <span id="mqtt-status-text">disconnected</span>
-        </div>
-        <div class="wifi-save-row">
-          <button class="btn btn-green" onclick="saveMqtt()">Save</button>
-        </div>
+      </label>
+      <div id="mqtt-fields" style="margin-top:12px;">
+        <input type="text" id="mqtt-host" placeholder="mqtt.example.com" class="wifi-input" style="margin-bottom:8px;">
+        <input type="number" id="mqtt-port" placeholder="1883" class="wifi-input" style="margin-bottom:8px;">
+        <input type="text" id="mqtt-user" placeholder="Username (optional)" class="wifi-input" style="margin-bottom:8px;">
+        <input type="password" id="mqtt-pass" placeholder="Password (optional)" class="wifi-input" style="margin-bottom:8px;">
+        <input type="text" id="mqtt-topic" placeholder="Topic" class="wifi-input" style="margin-bottom:12px;">
+        <button class="btn btn-green" onclick="saveMqtt()">Save MQTT</button>
+      </div>
+      <div style="margin-top:8px; font-size:13px; color:var(--subtext);">
+        Status: <span id="mqtt-status">Disabled</span>
       </div>
     </div>
   </div>
@@ -628,54 +698,46 @@
   <div class="card">
     <div class="card-header">Firmware Update</div>
     <div class="card-body">
-      <div class="ota-drop" id="ota-drop"
-           onclick="document.getElementById('ota-file').click()"
-           ondragover="otaDragOver(event)"
-           ondragleave="otaDragLeave(event)"
-           ondrop="otaDrop(event)">
-        <div class="ota-drop-icon">📦</div>
-        <div class="ota-drop-text">Drop <span>.bin</span> file here or <span>click to browse</span></div>
+      <div id="ota-drop-zone" class="ota-drop-zone">
+        <div class="ota-icon">📦</div>
+        <div class="ota-text">Drop .bin file here or click to select</div>
+        <input type="file" id="ota-file" accept=".bin" style="display:none;">
       </div>
-      <input type="file" id="ota-file" accept=".bin" style="display:none" onchange="otaFileSelected(this)">
-      <div class="ota-progress" id="ota-progress">
-        <div class="ota-bar-wrap"><div class="ota-bar" id="ota-bar"></div></div>
-        <div class="ota-status" id="ota-status">Uploading...</div>
+      <div id="ota-progress" class="ota-progress" style="display:none;">
+        <div class="ota-bar">
+          <div class="ota-fill" id="ota-fill"></div>
+        </div>
+        <div id="ota-percent" class="ota-percent">0%</div>
       </div>
     </div>
   </div>
 
 </main>
 
-<div class="toast" id="toast"></div>
-
 <script>
 // ============================================================
-// WebSocket
+// WEBSOCKET
 // ============================================================
 let ws;
-let currentInput = 0;
-let learningKey = null;
-let countdownInterval = null;
 
-function connectWS() {
-  ws = new WebSocket('ws://' + location.hostname + '/ws');
-
+function connect() {
+  ws = new WebSocket('ws://' + window.location.hostname + '/ws');
+  
   ws.onopen = () => {
     console.log('WS connected');
-    ws.send(JSON.stringify({type: 'get_status'}));
+    setupOTA();
+    send({type: 'get_status'});
   };
-
+  
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     handleMessage(msg);
   };
-
+  
   ws.onclose = () => {
-    console.log('WS closed, reconnecting...');
-    setTimeout(connectWS, 2000);
+    console.log('WS disconnected');
+    setTimeout(connect, 2000);
   };
-
-  ws.onerror = () => ws.close();
 }
 
 function send(obj) {
@@ -685,284 +747,491 @@ function send(obj) {
 }
 
 // ============================================================
-// Message handler
+// MESSAGE HANDLER
 // ============================================================
 function handleMessage(msg) {
   switch(msg.type) {
-
     case 'status':
-      // Pełny status przy połączeniu
-      setActiveInput(msg.input);
-      document.getElementById('ip-addr').textContent = msg.ip || '';
-      if (msg.ir) {
-        setIRCodes(msg.ir);
-      }
-      if (msg.wifi_ssid) {
-        document.getElementById('wifi-ssid').value = msg.wifi_ssid;
-      }
+      // IP address
+      if (msg.ip) document.getElementById('ip-addr').textContent = msg.ip;
+      
+      // Input selection
+      if (msg.input !== undefined) updateInput(msg.input);
+      
+      // Relay masks
+      if (msg.relay_masks) setRelayMasks(msg.relay_masks);
+      
+      // Brightness
       if (msg.brightness !== undefined) {
-        const slider = document.getElementById('brightness');
-        slider.value = msg.brightness;
-        document.getElementById('brightness-val').textContent =
-          Math.round(msg.brightness / 255 * 100) + '%';
+        document.getElementById('brightness').value = msg.brightness;
+        updateBrightnessDisplay(msg.brightness);
       }
+      
+      // Display settings
       if (msg.disp_invert !== undefined) {
         document.getElementById('disp-invert').checked = msg.disp_invert;
       }
       if (msg.disp_rotate !== undefined) {
         document.getElementById('disp-rotate').checked = msg.disp_rotate;
       }
-      if (msg.mqtt_host)    document.getElementById('mqtt-host').value    = msg.mqtt_host;
-      if (msg.mqtt_port)    document.getElementById('mqtt-port').value    = msg.mqtt_port;
-      if (msg.mqtt_user)    document.getElementById('mqtt-user').value    = msg.mqtt_user;
-      if (msg.mqtt_topic)   document.getElementById('mqtt-topic').value   = msg.mqtt_topic;
-      if (msg.mqtt_enabled !== undefined)
-        document.getElementById('mqtt-enabled').checked = msg.mqtt_enabled;
+      
+      // Audio
+      if (msg.audio_vol !== undefined) {
+        document.getElementById('audio-volume').value = msg.audio_vol;
+        updateVolumeDisplay(msg.audio_vol);
+      }
+      if (msg.audio_bass !== undefined) {
+        document.getElementById('audio-bass').value = msg.audio_bass;
+        updateBassDisplay(msg.audio_bass);
+      }
+      if (msg.audio_treble !== undefined) {
+        document.getElementById('audio-treble').value = msg.audio_treble;
+        updateTrebleDisplay(msg.audio_treble);
+      }
+      
+      // IR codes
+      if (msg.ir) setIRCodes(msg.ir);
+      
+      // WiFi
+      if (msg.wifi_ssid) document.getElementById('wifi-ssid').value = msg.wifi_ssid;
+      
+      // MQTT
+      if (msg.mqtt_host) document.getElementById('mqtt-host').value = msg.mqtt_host;
+      if (msg.mqtt_port) document.getElementById('mqtt-port').value = msg.mqtt_port;
+      if (msg.mqtt_user) document.getElementById('mqtt-user').value = msg.mqtt_user;
+      if (msg.mqtt_pass_set) {
+        document.getElementById('mqtt-pass').placeholder = '••••••••';
+      }
+      if (msg.mqtt_topic) document.getElementById('mqtt-topic').value = msg.mqtt_topic;
+      if (msg.mqtt_enabled !== undefined) {
+        const mqttEnable = document.getElementById('mqtt-enable');
+        if (mqttEnable) {
+          mqttEnable.checked = msg.mqtt_enabled;
+          setMqttFieldsEnabled(msg.mqtt_enabled);
+        }
+      }
       setMqttStatus(msg.mqtt_connected === true);
       break;
-
+      
     case 'input_changed':
-      setActiveInput(msg.input);
-      showToast('Input ' + (msg.input + 1) + ' selected', 'green');
+      if (msg.input !== undefined) updateInput(msg.input);
       break;
-
+      
+    case 'audio_changed':
+      if (msg.vol !== undefined) {
+        document.getElementById('audio-volume').value = msg.vol;
+        updateVolumeDisplay(msg.vol);
+      }
+      if (msg.bass !== undefined) {
+        document.getElementById('audio-bass').value = msg.bass;
+        updateBassDisplay(msg.bass);
+      }
+      if (msg.treble !== undefined) {
+        document.getElementById('audio-treble').value = msg.treble;
+        updateTrebleDisplay(msg.treble);
+      }
+      break;
+      
     case 'ir_received':
-      // Kod IR odebrany podczas nauki
-      if (learningKey === msg.key) {
-        stopLearning(msg.key, msg.code);
+      if (msg.key && msg.code !== undefined) {
+        // Stop countdown
+        if (irCountdowns[msg.key]) {
+          clearInterval(irCountdowns[msg.key]);
+          delete irCountdowns[msg.key];
+        }
+        const cdEl = document.getElementById('cd-' + msg.key);
+        if (cdEl) cdEl.textContent = '';
+        
+        // Ustaw kod
+        const codeEl = document.getElementById('ir-' + msg.key);
+        if (codeEl) {
+          codeEl.value = msg.code || 'not set';
+        }
+        
+        showToast('IR code learned!', 'green');
       }
       break;
-
+      
     case 'ir_timeout':
-      if (learningKey === msg.key) {
-        stopLearning(msg.key, null);
-        showToast('No IR signal received', 'red');
+      if (msg.key) {
+        // Stop countdown
+        if (irCountdowns[msg.key]) {
+          clearInterval(irCountdowns[msg.key]);
+          delete irCountdowns[msg.key];
+        }
+        const cdEl = document.getElementById('cd-' + msg.key);
+        if (cdEl) cdEl.textContent = '';
+        
+        showToast('IR timeout - no signal received', 'red');
       }
       break;
-
+      
+    case 'ir_cleared':
+      if (msg.key) {
+        document.getElementById('ir-' + msg.key).value = 'not set';
+      }
+      break;
+      
+    case 'wifi_test_result':
+      showWifiStatus(msg.success, msg.message);
+      break;
+      
+    case 'relays_saved':
+      showToast('Relays saved!', 'green');
+      break;
+      
+    case 'relays_updated':
+      if (msg.relay_masks) setRelayMasks(msg.relay_masks);
+      showToast('Relays updated!', 'green');
+      break;
+      
     case 'ir_saved':
       showToast('IR codes saved!', 'green');
       break;
-
-    case 'wifi_saved':
-      showToast('WiFi saved! Restarting...', 'green');
+      
+    case 'mqtt_saved':
+      showToast('MQTT saved!', 'green');
+      setMqttStatus(false, false);
       break;
-
-    case 'wifi_test_ok':
-      showToast('WiFi OK: ' + msg.ip, 'green');
-      break;
-
-    case 'wifi_test_fail':
-      showToast('WiFi connection failed!', 'red');
-      break;
-
+      
     case 'mqtt_connected':
       setMqttStatus(true);
       break;
-
+      
     case 'mqtt_disconnected':
-      setMqttStatus(false);
+      setMqttStatus(false, false);
       break;
-
-    case 'mqtt_saved':
-      showToast('MQTT saved!', 'green');
-      break;
-
-    case 'ota_progress':
-      setOtaProgress(msg.percent, 'Uploading... ' + msg.percent + '%');
-      break;
-
-    case 'ota_ok':
-      setOtaProgress(100, 'Done! Restarting...');
-      showToast('Firmware updated!', 'green');
-      break;
-
-    case 'ota_fail':
-      setOtaProgress(0, 'Update failed!');
-      showToast('OTA failed!', 'red');
-      break;
-
   }
 }
 
 // ============================================================
 // INPUTS
 // ============================================================
-function selectInput(index) {
-  send({type: 'set_input', input: index});
+function selectInput(input) {
+  send({type: 'set_input', input: input});
 }
 
-function setActiveInput(index) {
-  currentInput = index;
-  document.querySelectorAll('.input-tile').forEach((tile, i) => {
-    tile.classList.toggle('active', i === index);
-  });
-}
-
-// ============================================================
-// IR LEARNING
-// ============================================================
-function learnIR(key) {
-  if (learningKey) return;  // Już uczymy
-
-  learningKey = key;
-  const input = document.getElementById('ir-' + key);
-  const cd    = document.getElementById('cd-' + key);
-
-  input.classList.add('learning');
-  input.value = 'Press remote button...';
-  cd.classList.add('visible');
-
-  // Countdown 10s
-  let secs = 10;
-  cd.textContent = secs + 's';
-  countdownInterval = setInterval(() => {
-    secs--;
-    cd.textContent = secs + 's';
-    if (secs <= 0) clearInterval(countdownInterval);
-  }, 1000);
-
-  // Wyślij do ESP32
-  send({type: 'learn_ir', key: key});
-}
-
-function stopLearning(key, code) {
-  clearInterval(countdownInterval);
-  learningKey = null;
-
-  const input = document.getElementById('ir-' + key);
-  const cd    = document.getElementById('cd-' + key);
-
-  input.classList.remove('learning');
-  cd.classList.remove('visible');
-
-  if (code) {
-    input.value = '0x' + code.toString(16).toUpperCase().padStart(8, '0');
-    showToast('IR code learned!', 'green');
-  } else {
-    input.value = input.dataset.prev || '';
+function updateInput(input) {
+  for (let i = 0; i < 4; i++) {
+    const tile = document.getElementById('tile-' + i);
+    if (tile) {
+      if (i === input) {
+        tile.classList.add('active');
+      } else {
+        tile.classList.remove('active');
+      }
+    }
   }
 }
 
-function setIRCodes(ir) {
-  const keys = ['source', 'input1', 'input2', 'input3', 'input4'];
-  keys.forEach(key => {
-    if (ir[key]) {
-      const el = document.getElementById('ir-' + key);
-      el.value = '0x' + ir[key].toString(16).toUpperCase().padStart(8, '0');
-      el.dataset.prev = el.value;
-    }
-  });
+function setRelayMasks(masks) {
+  for (let i = 0; i < 4; i++) {
+    const cb = document.getElementById('relay-' + i);
+    if (cb) cb.checked = !!(masks[i]);
+  }
 }
 
-function saveIR() {
-  const keys = ['source', 'input1', 'input2', 'input3', 'input4'];
-  const codes = {};
-  keys.forEach(key => {
-    const val = document.getElementById('ir-' + key).value;
-    if (val && val !== 'not set') {
-      codes[key] = parseInt(val, 16);
+// onRelayChange() - wyeliminowana, teraz saveRelays() jest wywoływany bezpośrednio na onChange
+
+function toggleRelay(index) {
+  const cb = document.getElementById('relay-' + index);
+  if (cb) {
+    cb.checked = !cb.checked;
+    console.log(`Relay ${index} toggled to: ${cb.checked}`);
+    saveRelays();
+  }
+}
+
+function saveRelays() {
+  console.log("DEBUG: saveRelays() called");
+  const masks = [0, 0, 0, 0];
+  for (let i = 0; i < 4; i++) {
+    const cb = document.getElementById('relay-' + i);
+    if (cb) {
+      console.log(`  relay-${i}: checked=${cb.checked}`);
+      if (cb.checked) masks[i] = 1;
     }
+  }
+  console.log("DEBUG: Sending relay masks:", masks);
+  send({
+    type: 'save_relays',
+    mask0: masks[0],
+    mask1: masks[1],
+    mask2: masks[2],
+    mask3: masks[3]
   });
-  send({type: 'save_ir', codes: codes});
 }
 
 // ============================================================
 // BRIGHTNESS
 // ============================================================
-let brightnessTimer = null;
 function onBrightnessChange(val) {
-  document.getElementById('brightness-val').textContent =
-    Math.round(val / 255 * 100) + '%';
-  clearTimeout(brightnessTimer);
-  brightnessTimer = setTimeout(() => {
-    send({type: 'set_brightness', value: parseInt(val)});
-  }, 100);
+  updateBrightnessDisplay(val);
+  send({type: 'set_brightness', value: parseInt(val)});
 }
 
-function onInvertChange(checked) {
+function updateBrightnessDisplay(val) {
+  const pct = Math.round(val * 100 / 255);
+  document.getElementById('brightness-val').textContent = pct + '%';
+}
+
+// ============================================================
+// DISPLAY
+// ============================================================
+function onDispInvertChange(checked) {
   send({type: 'set_invert', value: checked});
 }
 
-function onRotateChange(checked) {
+function onDispRotateChange(checked) {
   send({type: 'set_rotate', value: checked});
+}
+
+// ============================================================
+// AUDIO
+// ============================================================
+function onVolumeChange(val) {
+  updateVolumeDisplay(val);
+  send({type: 'set_volume', value: parseInt(val)});
+}
+
+function updateVolumeDisplay(val) {
+  const level = 63 - val;
+  const percent = Math.round(level * 100 / 63);
+  document.getElementById('volume-val').textContent = 'VOLUME: ' + percent + '%';
+}
+
+function onBassChange(val) {
+  updateBassDisplay(val);
+  send({type: 'set_bass', value: parseInt(val)});
+}
+
+function updateBassDisplay(val) {
+  document.getElementById('bass-val').textContent = 'BASS: ' + (val > 0 ? '+' : '') + val;
+}
+
+function onTrebleChange(val) {
+  updateTrebleDisplay(val);
+  send({type: 'set_treble', value: parseInt(val)});
+}
+
+function updateTrebleDisplay(val) {
+  document.getElementById('treble-val').textContent = 'TREBLE: ' + (val > 0 ? '+' : '') + val;
+}
+
+// ============================================================
+// IR REMOTE
+// ============================================================
+let irCountdowns = {};
+
+function learnIR(key) {
+  send({type: 'learn_ir', key: key});
+  
+  // Countdown
+  let countdown = 10;
+  const cdEl = document.getElementById('cd-' + key);
+  if (!cdEl) return;
+  
+  if (irCountdowns[key]) clearInterval(irCountdowns[key]);
+  
+  irCountdowns[key] = setInterval(() => {
+    cdEl.textContent = countdown + 's';
+    countdown--;
+    if (countdown < 0) {
+      clearInterval(irCountdowns[key]);
+      cdEl.textContent = '';
+    }
+  }, 1000);
+}
+
+function clearIR(key) {
+  const el = document.getElementById('ir-' + key);
+  if (el && el.value && el.value !== 'not set') {
+    if (confirm('Clear IR code for ' + key + '?')) {
+      el.value = 'not set';
+      send({type: 'clear_ir', key: key});
+    }
+  }
+}
+
+function setIRCodes(codes) {
+  const keys = ['source', 'input1', 'input2', 'input3', 'input4', 'volp', 'volm', 'up', 'down'];
+  keys.forEach(key => {
+    if (codes[key] !== undefined) {
+      const el = document.getElementById('ir-' + key);
+      if (el) el.value = codes[key] || 'not set';
+    }
+  });
+}
+
+function saveIR() {
+  const keys = ['source', 'input1', 'input2', 'input3', 'input4', 'volp', 'volm', 'up', 'down'];
+  const codes = {};
+  keys.forEach(key => {
+    const el = document.getElementById('ir-' + key);
+    if (el) {
+      const val = el.value;
+      codes[key] = (val && val !== 'not set') ? parseInt(val) : 0;
+    }
+  });
+  
+  send({
+    type: 'save_ir',
+    source: codes.source,
+    input1: codes.input1,
+    input2: codes.input2,
+    input3: codes.input3,
+    input4: codes.input4,
+    volp: codes.volp,
+    volm: codes.volm,
+    up: codes.up,
+    down: codes.down
+  });
 }
 
 // ============================================================
 // WIFI
 // ============================================================
-function saveWifi() {
-  const ssid = document.getElementById('wifi-ssid').value.trim();
+function testWifi() {
+  const ssid = document.getElementById('wifi-ssid').value;
   const pass = document.getElementById('wifi-pass').value;
-  if (!ssid) { showToast('Enter SSID!', 'red'); return; }
-  send({type: 'save_wifi', ssid: ssid, pass: pass});
+  if (!ssid) {
+    showWifiStatus(false, 'Enter SSID');
+    return;
+  }
+  send({type: 'test_wifi', ssid: ssid, pass: pass});
+  showWifiStatus(null, 'Testing...');
 }
 
-function testWifi() {
-  const ssid = document.getElementById('wifi-ssid').value.trim();
+function saveWifi() {
+  const ssid = document.getElementById('wifi-ssid').value;
   const pass = document.getElementById('wifi-pass').value;
-  if (!ssid) { showToast('Enter SSID!', 'red'); return; }
-  send({type: 'test_wifi', ssid: ssid, pass: pass});
-  showToast('Testing WiFi...', '');
+  if (!ssid) {
+    showWifiStatus(false, 'Enter SSID');
+    return;
+  }
+  if (confirm('Save WiFi and reboot?')) {
+    send({type: 'save_wifi', ssid: ssid, pass: pass});
+    showWifiStatus(null, 'Rebooting...');
+  }
+}
+
+function showWifiStatus(success, message) {
+  const el = document.getElementById('wifi-status');
+  if (!el) return;
+  el.textContent = message;
+  if (success === true) {
+    el.style.background = 'rgba(45, 197, 94, 0.2)';
+    el.style.color = 'var(--green)';
+  } else if (success === false) {
+    el.style.background = 'rgba(224, 40, 40, 0.2)';
+    el.style.color = 'var(--red)';
+  } else {
+    el.style.background = 'rgba(136, 136, 136, 0.2)';
+    el.style.color = 'var(--subtext)';
+  }
 }
 
 // ============================================================
 // MQTT
 // ============================================================
-function setMqttStatus(connected) {
-  const dot  = document.getElementById('mqtt-dot');
-  const text = document.getElementById('mqtt-status-text');
-  dot.classList.toggle('connected', connected);
-  text.textContent = connected ? 'connected' : 'disconnected';
+function onMqttEnableChange(checked) {
+  setMqttFieldsEnabled(checked);
+  send({type: 'set_mqtt_enabled', enabled: checked});
+  setMqttStatus(false, false);
 }
 
-function onMqttEnabledChange(checked) {
-  // Tylko lokalna zmiana - zapis przez Save
-}
-
-function saveMqtt() {
-  send({
-    type:    'save_mqtt',
-    host:    document.getElementById('mqtt-host').value.trim(),
-    port:    parseInt(document.getElementById('mqtt-port').value) || 1883,
-    user:    document.getElementById('mqtt-user').value.trim(),
-    pass:    document.getElementById('mqtt-pass').value,
-    topic:   document.getElementById('mqtt-topic').value.trim() || 'audio_switcher',
-    enabled: document.getElementById('mqtt-enabled').checked,
+function setMqttFieldsEnabled(enabled) {
+  const ids = ['mqtt-host','mqtt-port','mqtt-user','mqtt-pass','mqtt-topic'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !enabled;
   });
 }
 
-// ============================================================
-// OTA
-// ============================================================
-function setOtaProgress(percent, status) {
-  document.getElementById('ota-progress').classList.add('visible');
-  document.getElementById('ota-bar').style.width = percent + '%';
-  document.getElementById('ota-status').textContent = status;
+function saveMqtt() {
+  const host = document.getElementById('mqtt-host').value;
+  const port = document.getElementById('mqtt-port').value;
+  const user = document.getElementById('mqtt-user').value;
+  const pass = document.getElementById('mqtt-pass').value;
+  const topic = document.getElementById('mqtt-topic').value;
+  send({
+    type: 'save_mqtt',
+    host: host,
+    port: parseInt(port) || 1883,
+    user: user,
+    pass: pass,
+    topic: topic
+  });
 }
 
-function otaDragOver(e) {
-  e.preventDefault();
-  document.getElementById('ota-drop').classList.add('dragover');
+function setMqttStatus(connected, connecting) {
+  const el = document.getElementById('mqtt-status');
+  const enableCb = document.getElementById('mqtt-enable');
+  
+  if (el) {
+    // Sprawdź czy MQTT jest enabled
+    const enabled = enableCb ? enableCb.checked : false;
+    
+    if (!enabled) {
+      el.textContent = 'Disabled';
+      el.style.color = 'var(--subtext)';
+    } else if (connecting) {
+      el.textContent = 'Connecting...';
+      el.style.color = 'var(--subtext)';
+    } else if (connected) {
+      el.textContent = 'Connected';
+      el.style.color = 'var(--green)';
+    } else {
+      el.textContent = 'Disconnected';
+      el.style.color = 'var(--red)';
+    }
+  }
 }
-function otaDragLeave(e) {
-  document.getElementById('ota-drop').classList.remove('dragover');
-}
-function otaDrop(e) {
-  e.preventDefault();
-  otaDragLeave(e);
-  const file = e.dataTransfer.files[0];
-  if(file) otaUpload(file);
-}
-function otaFileSelected(input) {
-  if(input.files[0]) otaUpload(input.files[0]);
+
+// ============================================================
+// OTA UPDATE
+// ============================================================
+function setupOTA() {
+  const dropZone = document.getElementById('ota-drop-zone');
+  const fileInput = document.getElementById('ota-file');
+
+  if (!dropZone || !fileInput) return;
+
+  // Click to select
+  dropZone.onclick = () => fileInput.click();
+
+  // File selected
+  fileInput.onchange = (e) => {
+    if (e.target.files.length > 0) {
+      otaUpload(e.target.files[0]);
+    }
+  };
+
+  // Drag & drop
+  dropZone.ondragover = (e) => {
+    e.preventDefault();
+    dropZone.style.borderColor = 'var(--green)';
+  };
+
+  dropZone.ondragleave = () => {
+    dropZone.style.borderColor = 'var(--border)';
+  };
+
+  dropZone.ondrop = (e) => {
+    e.preventDefault();
+    dropZone.style.borderColor = 'var(--border)';
+    if (e.dataTransfer.files.length > 0) {
+      otaUpload(e.dataTransfer.files[0]);
+    }
+  };
 }
 
 function otaUpload(file) {
-  if(!file.name.endsWith('.bin')) {
+  if (!file.name.endsWith('.bin')) {
     showToast('Select a .bin file!', 'red');
     return;
   }
+  
   setOtaProgress(0, 'Uploading...');
   showToast('Uploading firmware...', '');
 
@@ -970,49 +1239,71 @@ function otaUpload(file) {
   xhr.open('POST', '/update');
 
   xhr.upload.onprogress = (e) => {
-    if(e.lengthComputable) {
+    if (e.lengthComputable) {
       const pct = Math.round(e.loaded / e.total * 100);
       setOtaProgress(pct, 'Uploading... ' + pct + '%');
     }
   };
+  
   xhr.onload = () => {
     try {
       const res = JSON.parse(xhr.responseText);
-      if(res.ok) {
-        setOtaProgress(100, 'Done! Restarting...');
-        showToast('Firmware updated! Restarting...', 'green');
+      if (res.ok) {
+        setOtaProgress(100, 'Success! Rebooting...');
+        showToast('Update success! Device rebooting...', 'green');
+        setTimeout(() => location.reload(), 3000);
       } else {
-        setOtaProgress(0, 'Update failed!');
-        showToast('OTA failed!', 'red');
+        setOtaProgress(0, 'Failed: ' + (res.error || 'Unknown error'));
+        showToast('Update failed: ' + (res.error || 'Unknown error'), 'red');
       }
-    } catch(e) {
-      setOtaProgress(0, 'Error!');
+    } catch (e) {
+      setOtaProgress(0, 'Update failed');
+      showToast('Update failed', 'red');
     }
   };
+  
   xhr.onerror = () => {
-    setOtaProgress(0, 'Connection error!');
-    showToast('OTA connection error!', 'red');
+    setOtaProgress(0, 'Network error');
+    showToast('Network error during upload', 'red');
   };
 
-  const fd = new FormData();
-  fd.append('firmware', file, file.name);
-  xhr.send(fd);
+  xhr.send(file);
+}
+
+function setOtaProgress(percent, text) {
+  const prog = document.getElementById('ota-progress');
+  const fill = document.getElementById('ota-fill');
+  const pct = document.getElementById('ota-percent');
+  const zone = document.getElementById('ota-drop-zone');
+  
+  if (percent > 0) {
+    if (zone) zone.style.display = 'none';
+    if (prog) prog.style.display = 'block';
+    if (fill) fill.style.width = percent + '%';
+    if (pct) pct.textContent = text || (percent + '%');
+  } else {
+    if (zone) zone.style.display = 'block';
+    if (prog) prog.style.display = 'none';
+  }
 }
 
 // ============================================================
 // TOAST
 // ============================================================
-function showToast(msg, type) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.className = 'toast ' + type + ' show';
-  setTimeout(() => t.classList.remove('show'), 3000);
+function showToast(message, color) {
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.textContent = message;
+  if (color === 'green') toast.style.borderColor = 'var(--green)';
+  if (color === 'red') toast.style.borderColor = 'var(--red)';
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
 }
 
 // ============================================================
 // INIT
 // ============================================================
-connectWS();
+connect();
 </script>
 </body>
 </html>

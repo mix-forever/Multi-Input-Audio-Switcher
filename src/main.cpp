@@ -1,5 +1,5 @@
 // ============================================================
-// AUDIO SWITCHER v4.0
+// AUDIO SWITCHER v4.1
 // ESP32-WROOM-32 + PT2314E + ST7789 + IR + WiFi + WS + MQTT + OTA
 // ============================================================
 
@@ -34,7 +34,13 @@
 #define PT_SCL   22
 #define IR_PIN   19
 #define TFT_BL   15
-#define RELAY_BT  4   // SSR high-level trigger - BT power
+
+// Relay pins - SSR high-level trigger
+#define RELAY_1  32
+#define RELAY_2  33
+#define RELAY_3  25
+#define RELAY_4  26
+const uint8_t RELAY_PINS[4] = {RELAY_1, RELAY_2, RELAY_3, RELAY_4};
 
 // PWM backlight
 #define BL_CHANNEL   0
@@ -78,6 +84,10 @@
 #define COLOR_GRAY     0x8410
 #define COLOR_GREEN    0x07E0
 #define COLOR_RED      0xF800
+#define COLOR_YELLOW   0xFFE0  // Żółty
+#define COLOR_BLUE     0x001F  // Niebieski
+#define COLOR_CYAN     0x07FF  // Cyan (jaśniejszy niebieski)
+#define COLOR_ORANGE   0xFD20  // Pomarańczowy
 
 // ============================================================
 // LAYOUT kafelków
@@ -90,8 +100,8 @@
 // ============================================================
 // NAZWY WEJŚĆ
 // ============================================================
-const char* INPUT_NAMES[] = {"TV", "BT", "NET", "RES"};
-const uint16_t* INPUT_ICONS[] = {icon_tv, icon_bt, icon_radio, icon_other};
+const char* INPUT_NAMES[] = {"Input1", "Input2", "Input3", "Input4"};
+const uint16_t* INPUT_ICONS[] = {icon_input1, icon_input2, icon_input3, icon_input4};
 
 // ============================================================
 // GLOBALS
@@ -108,8 +118,8 @@ uint8_t       currentInput  = 0;
 unsigned long lastIR        = 0;
 
 // IR kody (ładowane z NVS)
-uint32_t irCodes[5] = {0, 0, 0, 0, 0};
-// 0=source, 1=input1..4=input4
+uint32_t irCodes[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
+// 0=source, 1-4=input1-4, 5=vol+, 6=vol-, 7=up, 8=down
 
 // IR learning state
 bool          learningIR  = false;
@@ -137,10 +147,29 @@ String        mqttPass    = "";
 String        mqttTopic   = MQTT_TOPIC_DEFAULT;
 bool          mqttEnabled = false;
 bool          mqttConnected = false;
+bool          mqttSetupDone = false;  // Track if setupMqtt() has been called once
 unsigned long mqttLastReconnect = 0;
 
 // OTA state
 bool otaInProgress = false;
+
+
+// Relay enable - czy dane wejście steruje swoim przekaźnikiem
+// relayEnabled[i] = true → Input(i+1) włącza Relay(i+1)
+bool relayEnabled[4] = {false, false, false, false};
+
+// Audio settings
+uint8_t audioVolume = 0;    // 0-63 (0=max, 63=mute - odwrotna skala PT2314E)
+int8_t  audioBass   = 0;    // -14 do +14 dB
+int8_t  audioTreble = 0;    // -14 do +14 dB
+
+// Audio overlay state
+bool          audioOverlayActive = false;
+bool          audioOverlayDrawn  = false;  // Czy struktura została narysowana
+unsigned long audioOverlayStart  = 0;
+uint8_t       audioFocus         = 0;  // 0=Volume, 1=Bass, 2=Treble
+#define AUDIO_OVERLAY_TIMEOUT 2000
+
 
 // ============================================================
 // NVS
@@ -160,6 +189,10 @@ void loadPrefs() {
     irCodes[2]   = prefs.getUInt("ir_input2",  0);
     irCodes[3]   = prefs.getUInt("ir_input3",  0);
     irCodes[4]   = prefs.getUInt("ir_input4",  0);
+    irCodes[5]   = prefs.getUInt("ir_volp",  0);
+    irCodes[6]   = prefs.getUInt("ir_volm",  0);
+    irCodes[7]   = prefs.getUInt("ir_up",    0);
+    irCodes[8]   = prefs.getUInt("ir_down",  0);
 
     mqttHost     = prefs.getString("mqtt_host",  "");
     mqttPort     = prefs.getUShort("mqtt_port",  1883);
@@ -167,6 +200,15 @@ void loadPrefs() {
     mqttPass     = prefs.getString("mqtt_pass",  "");
     mqttTopic    = prefs.getString("mqtt_topic", MQTT_TOPIC_DEFAULT);
     mqttEnabled  = prefs.getBool("mqtt_en",      false);
+
+    relayEnabled[0] = prefs.getBool("relay_en0", false);
+    relayEnabled[1] = prefs.getBool("relay_en1", false);
+    relayEnabled[2] = prefs.getBool("relay_en2", false);
+    relayEnabled[3] = prefs.getBool("relay_en3", false);
+
+    audioVolume = prefs.getUChar("audio_vol",  0);
+    audioBass   = prefs.getChar("audio_bass",  0);
+    audioTreble = prefs.getChar("audio_treb",  0);
 
     prefs.end();
     Serial.println("NVS: Prefs loaded");
@@ -198,6 +240,10 @@ void saveIRCodes() {
     prefs.putUInt("ir_input2", irCodes[2]);
     prefs.putUInt("ir_input3", irCodes[3]);
     prefs.putUInt("ir_input4", irCodes[4]);
+    prefs.putUInt("ir_volp",  irCodes[5]);
+    prefs.putUInt("ir_volm",  irCodes[6]);
+    prefs.putUInt("ir_up",    irCodes[7]);
+    prefs.putUInt("ir_down",  irCodes[8]);
     prefs.end();
     Serial.println("NVS: IR codes saved");
 }
@@ -222,11 +268,46 @@ void saveMqttSettings() {
     Serial.println("NVS: MQTT saved");
 }
 
+void saveRelayEnabled() {
+    prefs.begin("switcher", false);
+    prefs.putBool("relay_en0", relayEnabled[0]);
+    prefs.putBool("relay_en1", relayEnabled[1]);
+    prefs.putBool("relay_en2", relayEnabled[2]);
+    prefs.putBool("relay_en3", relayEnabled[3]);
+    prefs.end();
+    Serial.println("NVS: Relay config saved");
+}
+
+
+void saveAudioSettings() {
+    prefs.begin("switcher", false);
+    prefs.putUChar("audio_vol",  audioVolume);
+    prefs.putChar("audio_bass",  audioBass);
+    prefs.putChar("audio_treb",  audioTreble);
+    prefs.end();
+    Serial.println("NVS: Audio settings saved");
+}
+
 // ============================================================
 // DISPLAY - forward declarations
 // ============================================================
 void drawUI();
 void notifyAll(const String& msg);
+void setupMqtt();
+void mqttPublishAudio();
+
+// ============================================================
+// RELAY CONTROL
+// ============================================================
+void applyRelays(uint8_t input) {
+    for(uint8_t i = 0; i < 4; i++) {
+        // Relay(i) aktywny tylko gdy: aktywny jest Input(i) ORAZ ten relay jest włączony
+        bool state = (i == input) && relayEnabled[i];
+        digitalWrite(RELAY_PINS[i], state ? HIGH : LOW);
+        Serial.printf("  Relay%d: %s\n", i+1, state ? "ON" : "off");
+    }
+    Serial.printf("Relays applied for input %d\n", input + 1);
+}
 
 // ============================================================
 // DISPLAY SETTINGS
@@ -333,6 +414,140 @@ void clearOverlay() {
 }
 
 // ============================================================
+// AUDIO OVERLAY - 3 paski z fokusem (bez migotania)
+// ============================================================
+
+// ============================================================
+// AUDIO GRADIENT COLORS
+// ============================================================
+uint16_t getVolumeColor(uint8_t volume) {
+    // Volume: 0=max głośno, 63=mute cicho
+    // Inwersja: 0-63 → 63-0
+    int level = 63 - volume;  // 0-63
+    int percent = level * 100 / 63;  // 0-100%
+    
+    // Odwrotny gradient: pasek rośnie = głośniej
+    if(percent <= 30) return COLOR_GREEN;    // 0-30% = zielony (cicho, bezpieczne)
+    if(percent <= 70) return COLOR_YELLOW;   // 31-70% = żółty (normalnie)
+    return COLOR_RED;                        // 71-100% = czerwony (głośno, niebezpieczne)
+}
+
+uint16_t getToneColor(int8_t value) {
+    // Bass/Treble: -14 do +14
+    if(value <= -5) return COLOR_CYAN;       // -14 do -5 = cyan (dużo cut)
+    if(value >= 5)  return COLOR_ORANGE;     // +5 do +14 = pomarańczowy (dużo boost)
+    return COLOR_GREEN;                      // -4 do +4 = zielony (neutralnie)
+}
+
+void resetAudioOverlay() {
+    audioOverlayDrawn = false;  // Wymusza pełny redraw przy następnym otwarciu
+}
+
+void showAudioOverlay() {
+    static uint8_t lastFocus = 255;
+    bool firstDraw = !audioOverlayDrawn || (lastFocus == 255);
+    
+    // Współrzędne 3 wierszy
+    int y1 = 10, y2 = 32, y3 = 54;
+    int arrowX = 4;
+    int labelX = 16;
+    int barX = 70;
+    int barW = SCREEN_W - barX - 40;  // Skrócony żeby nie nakładał się na wartości
+    int barH = 8;
+    
+    // Jeśli pierwszy raz lub zmiana fokusu → narysuj strukturę
+    if(firstDraw || lastFocus != audioFocus) {
+        tft.fillScreen(COLOR_BG);
+        tft.setTextSize(1);
+        
+        // Rysuj wszystkie etykiety i ramki
+        for(int i = 0; i < 3; i++) {
+            int y = (i == 0) ? y1 : (i == 1) ? y2 : y3;
+            bool focused = (i == audioFocus);
+            uint16_t color = focused ? COLOR_GREEN : COLOR_GRAY;
+            
+            tft.setTextColor(color);
+            
+            // Strzałka fokusu
+            if(focused) {
+                tft.setCursor(arrowX, y);
+                tft.print(">");
+            }
+            
+            // Etykieta
+            tft.setCursor(labelX, y);
+            if(i == 0) tft.print("VOLUME");
+            else if(i == 1) tft.print("BASS");
+            else tft.print("TREBLE");
+            
+            // Ramka paska
+            tft.drawRect(barX, y, barW, barH, color);
+        }
+        
+        lastFocus = audioFocus;
+    }
+    
+    // ── Odśwież tylko wartości i wypełnienia pasków ──────────────────────────
+    int centerX = barX + barW / 2;
+    
+    // Volume - czyść obszar paska i wartość
+    tft.fillRect(barX + 1, y1 + 1, barW - 2, barH - 2, COLOR_BG);
+    tft.fillRect(SCREEN_W - 30, y1, 30, 8, COLOR_BG);  // Czyść wartość
+    
+    int level = 63 - audioVolume;
+    int percent = level * 100 / 63;
+    int fillW = (barW - 2) * level / 63;
+    uint16_t volColor = getVolumeColor(audioVolume);
+    if(fillW > 0) tft.fillRect(barX + 1, y1 + 1, fillW, barH - 2, audioFocus == 0 ? volColor : COLOR_GRAY);
+    
+    String volStr = String(percent) + "%";
+    tft.setTextColor(audioFocus == 0 ? volColor : COLOR_GRAY);
+    tft.setCursor(SCREEN_W - volStr.length() * 6 - 4, y1);
+    tft.print(volStr);
+    
+    // Bass - czyść obszar paska i wartość
+    tft.fillRect(barX + 1, y2 + 1, barW - 2, barH - 2, COLOR_BG);
+    tft.fillRect(SCREEN_W - 24, y2, 24, 8, COLOR_BG);
+    
+    uint16_t bassColor = getToneColor(audioBass);
+    if(audioBass > 0) {
+        int fillW2 = ((barW - 2) / 2) * audioBass / 14;
+        tft.fillRect(centerX, y2 + 1, fillW2, barH - 2, audioFocus == 1 ? bassColor : COLOR_GRAY);
+    } else if(audioBass < 0) {
+        int fillW2 = ((barW - 2) / 2) * (-audioBass) / 14;
+        tft.fillRect(centerX - fillW2, y2 + 1, fillW2, barH - 2, audioFocus == 1 ? bassColor : COLOR_GRAY);
+    }
+    
+    String bassStr = String(audioBass > 0 ? "+" : "") + String(audioBass);
+    tft.setTextColor(audioFocus == 1 ? bassColor : COLOR_GRAY);
+    tft.setCursor(SCREEN_W - bassStr.length() * 6 - 4, y2);
+    tft.print(bassStr);
+    
+    // Treble - czyść obszar paska i wartość
+    tft.fillRect(barX + 1, y3 + 1, barW - 2, barH - 2, COLOR_BG);
+    tft.fillRect(SCREEN_W - 24, y3, 24, 8, COLOR_BG);
+    
+    uint16_t trebColor = getToneColor(audioTreble);
+    if(audioTreble > 0) {
+        int fillW3 = ((barW - 2) / 2) * audioTreble / 14;
+        tft.fillRect(centerX, y3 + 1, fillW3, barH - 2, audioFocus == 2 ? trebColor : COLOR_GRAY);
+    } else if(audioTreble < 0) {
+        int fillW3 = ((barW - 2) / 2) * (-audioTreble) / 14;
+        tft.fillRect(centerX - fillW3, y3 + 1, fillW3, barH - 2, audioFocus == 2 ? trebColor : COLOR_GRAY);
+    }
+    
+    String trebStr = String(audioTreble > 0 ? "+" : "") + String(audioTreble);
+    tft.setTextColor(audioFocus == 2 ? trebColor : COLOR_GRAY);
+    tft.setCursor(SCREEN_W - trebStr.length() * 6 - 4, y3);
+    tft.print(trebStr);
+    
+    audioOverlayDrawn = true;  // Struktura narysowana, kolejne wywołania tylko odświeżą paski
+}
+
+
+
+
+// ============================================================
 // DISPLAY - splash
 // ============================================================
 void showSplash() {
@@ -360,12 +575,73 @@ void setBrightness(uint8_t val) {
 }
 
 // ============================================================
+// AUDIO ADJUSTMENT
+// ============================================================
+void adjustAudio(int delta) {
+    // Reguluje parametr wskazywany przez audioFocus
+    if(audioFocus == 0) {
+        // Volume - PT2314E ma odwrotną skalę
+        int newVol = (int)audioVolume + delta;
+        if(newVol < 0) newVol = 0;
+        if(newVol > 63) newVol = 63;
+        audioVolume = (uint8_t)newVol;
+        audio.setVolume(audioVolume);
+        Serial.printf("Volume: %d (inv: %d = %d%%)\n", 
+            audioVolume, 63-audioVolume, (63-audioVolume)*100/63);
+    }
+    else if(audioFocus == 1) {
+        // Bass - odwróć delta bo Vol+/Vol- mają odwrotną logikę
+        int newBass = audioBass + (-delta);
+        if(newBass < -14) newBass = -14;
+        if(newBass > 14) newBass = 14;
+        audioBass = (int8_t)newBass;
+        audio.setBass(audioBass);
+        Serial.printf("Bass: %+d dB\n", audioBass);
+    }
+    else if(audioFocus == 2) {
+        // Treble - odwróć delta bo Vol+/Vol- mają odwrotną logikę
+        int newTreble = audioTreble + (-delta);
+        if(newTreble < -14) newTreble = -14;
+        if(newTreble > 14) newTreble = 14;
+        audioTreble = (int8_t)newTreble;
+        audio.setTreble(audioTreble);
+        Serial.printf("Treble: %+d dB\n", audioTreble);
+    }
+    
+    // Powiadom wszystkich klientów o zmianie
+    String msg = "{\"type\":\"audio_changed\",";
+    msg += "\"vol\":" + String(audioVolume) + ",";
+    msg += "\"bass\":" + String(audioBass) + ",";
+    msg += "\"treble\":" + String(audioTreble) + "}";
+    notifyAll(msg);
+    
+    // Zapisz do NVS
+    saveAudioSettings();
+    
+    // Publikuj do MQTT
+    mqttPublishAudio();
+    
+    audioOverlayActive = true;
+    audioOverlayStart = millis();
+    showAudioOverlay();
+}
+
+void changeFocus(int delta) {
+    audioFocus = (audioFocus + delta + 3) % 3;  // 0-2 z wraparound
+    resetAudioOverlay();  // Zmiana fokusu - wymaga pełnego redraw
+    audioOverlayActive = true;
+    audioOverlayStart = millis();
+    showAudioOverlay();
+    Serial.printf("Focus: %d (Vol/Bass/Treb)\n", audioFocus);
+}
+
+// ============================================================
 // AUDIO
 // ============================================================
 void initAudio(uint8_t input) {
-    audio.setVolume(0);
-    audio.setBass(0);
-    audio.setTreble(0);
+    audio.setVolume(audioVolume);
+    audio.setBass(audioBass);
+    audio.setTreble(audioTreble);
     audio.setAttL(0);
     audio.setAttR(0);
     audio.setSwitch(input, 0, 0);
@@ -388,6 +664,28 @@ void mqttPublishStatus(const char* status) {
     mqttClient.publish(topic.c_str(), 0, true, status);
 }
 
+void mqttPublishAudio() {
+    if(!mqttConnected) return;
+    
+    // JSON z danymi audio
+    String topic = mqttTopic + "/audio";
+    String payload = "{";
+    
+    // Volume - inwertuj PT2314E (0=głośno, 63=cicho)
+    int volPercent = (63 - audioVolume) * 100 / 63;
+    payload += "\"volume\":" + String(volPercent);
+    payload += ",\"volume_raw\":" + String(audioVolume);
+    
+    // Bass & Treble
+    payload += ",\"bass\":" + String(audioBass);
+    payload += ",\"treble\":" + String(audioTreble);
+    
+    payload += "}";
+    
+    mqttClient.publish(topic.c_str(), 0, false, payload.c_str());
+    Serial.printf("MQTT pub: %s = %s\n", topic.c_str(), payload.c_str());
+}
+
 // ============================================================
 // INPUT SWITCH
 // ============================================================
@@ -398,11 +696,9 @@ void switchInput(uint8_t newInput) {
     audio.setSwitch(currentInput, 0, 0);
     updateInput(old, currentInput);
     saveLastInput(currentInput);
-    digitalWrite(RELAY_BT, currentInput == 1 ? HIGH : LOW);
+    applyRelays(currentInput);
     mqttPublishInput(currentInput);
-    Serial.printf("Input: %d [%s] BT relay: %s\n",
-        currentInput + 1, INPUT_NAMES[currentInput],
-        currentInput == 1 ? "ON" : "OFF");
+    Serial.printf("Input: %d [%s]\n", currentInput + 1, INPUT_NAMES[currentInput]);
 }
 
 // ============================================================
@@ -419,15 +715,29 @@ String buildStatusJSON() {
     json += ",\"mqtt_host\":\""  + mqttHost + "\"";
     json += ",\"mqtt_port\":"    + String(mqttPort);
     json += ",\"mqtt_user\":\""  + mqttUser + "\"";
+    json += ",\"mqtt_pass_set\":" + String(mqttPass.length() > 0 ? "true" : "false");
     json += ",\"mqtt_topic\":\"" + mqttTopic + "\"";
-    json += ",\"mqtt_enabled\":" + String(mqttEnabled ? "true" : "false");
-    json += ",\"mqtt_connected\":" + String(mqttConnected ? "true" : "false");
+    json += ",\"mqtt_enabled\":" + String(mqttEnabled ? 1 : 0);
+    json += ",\"mqtt_connected\":" + String(mqttConnected ? 1 : 0);
+    json += ",\"relay_masks\":[";
+    for(int i = 0; i < 4; i++) {
+        if(i > 0) json += ",";
+        json += relayEnabled[i] ? "1" : "0";
+    }
+    json += "]";
+    json += ",\"audio_vol\":" + String(audioVolume);
+    json += ",\"audio_bass\":" + String(audioBass);
+    json += ",\"audio_treble\":" + String(audioTreble);
     json += ",\"ir\":{";
     json += "\"source\":"  + String(irCodes[0]);
     json += ",\"input1\":" + String(irCodes[1]);
     json += ",\"input2\":" + String(irCodes[2]);
     json += ",\"input3\":" + String(irCodes[3]);
     json += ",\"input4\":" + String(irCodes[4]);
+    json += ",\"volp\":"   + String(irCodes[5]);
+    json += ",\"volm\":"   + String(irCodes[6]);
+    json += ",\"up\":"     + String(irCodes[7]);
+    json += ",\"down\":"   + String(irCodes[8]);
     json += "}}";
     return json;
 }
@@ -445,6 +755,27 @@ void handleWSMessage(AsyncWebSocketClient* client, const String& data) {
     if(data.indexOf("\"get_status\"") >= 0) {
         client->text(buildStatusJSON());
     }
+    else if(data.indexOf("\"set_mqtt_enabled\"") >= 0) {
+        int ei = data.indexOf("\"enabled\":");
+        if(ei >= 0) {
+            String val = data.substring(ei + 10, ei + 15);
+            val.trim();
+            bool newEnabled = val.startsWith("true") || val.startsWith("1");
+            if(newEnabled != mqttEnabled) {
+                mqttEnabled = newEnabled;
+                saveMqttSettings();
+                Serial.printf("MQTT: set_mqtt_enabled = %d\n", mqttEnabled);
+                
+                if(!mqttEnabled && mqttClient.connected()) {
+                    // Wyłączamy MQTT - disconnect
+                    mqttClient.disconnect();
+                    Serial.println("MQTT: Disconnecting...");
+                }
+                // Włączanie MQTT - loop() sam połączy przez mqttReconnectIfNeeded()
+            }
+            notifyAll(buildStatusJSON());
+        }
+    }
     else if(data.indexOf("\"set_input\"") >= 0) {
         int idx = data.indexOf("\"input\":");
         if(idx >= 0) {
@@ -460,6 +791,28 @@ void handleWSMessage(AsyncWebSocketClient* client, const String& data) {
             learningIR  = true;
             learnStart  = millis();
             showIROverlay("IR: Press button for " + learningKey + "...");
+        }
+    }
+    else if(data.indexOf("\"clear_ir\"") >= 0) {
+        int idx = data.indexOf("\"key\":\"");
+        if(idx >= 0) {
+            int s = idx + 7, e = data.indexOf("\"", s);
+            String key = data.substring(s, e);
+            
+            // Znajdź indeks i wyzeruj kod
+            if(key == "source")       irCodes[0] = 0;
+            else if(key == "input1")  irCodes[1] = 0;
+            else if(key == "input2")  irCodes[2] = 0;
+            else if(key == "input3")  irCodes[3] = 0;
+            else if(key == "input4")  irCodes[4] = 0;
+            else if(key == "volp")    irCodes[5] = 0;
+            else if(key == "volm")    irCodes[6] = 0;
+            else if(key == "up")      irCodes[7] = 0;
+            else if(key == "down")    irCodes[8] = 0;
+            
+            saveIRCodes();
+            Serial.println("IR cleared: " + key);
+            notifyAll("{\"type\":\"ir_cleared\",\"key\":\"" + key + "\"}");
         }
     }
     else if(data.indexOf("\"save_ir\"") >= 0) {
@@ -487,6 +840,7 @@ void handleWSMessage(AsyncWebSocketClient* client, const String& data) {
             dispInvert = data.substring(idx + 8).startsWith("true");
             tft.invertDisplay(dispInvert);
             saveDisplaySettings();
+            notifyAll("{\"type\":\"status_updated\",\"disp_invert\":" + String(dispInvert ? "true" : "false") + "}");
         }
     }
     else if(data.indexOf("\"set_rotate\"") >= 0) {
@@ -495,6 +849,64 @@ void handleWSMessage(AsyncWebSocketClient* client, const String& data) {
             dispRotate = data.substring(idx + 8).startsWith("true");
             applyDisplaySettings();
             saveDisplaySettings();
+            notifyAll("{\"type\":\"status_updated\",\"disp_rotate\":" + String(dispRotate ? "true" : "false") + "}");
+        }
+    }
+    else if(data.indexOf("\"save_relays\"") >= 0) {
+        Serial.printf("DEBUG: Parsing relays from: %s\n", data.c_str());
+        for(int i = 0; i < 4; i++) {
+            String key = "\"mask" + String(i) + "\":";
+            int idx = data.indexOf(key);
+            if(idx >= 0) {
+                String valStr = data.substring(idx + key.length());
+                int val = valStr.toInt();
+                relayEnabled[i] = (val != 0);
+                Serial.printf("  mask%d: idx=%d, valStr='%s', val=%d, enabled=%d\n", 
+                    i, idx, valStr.substring(0, 5).c_str(), val, relayEnabled[i]);
+            }
+        }
+        saveRelayEnabled();
+        applyRelays(currentInput);
+        // Wyślij pełny status ze Updated relay_masks
+        String statusJson = "{\"type\":\"relays_updated\",\"relay_masks\":[";
+        for(int i = 0; i < 4; i++) {
+            if(i > 0) statusJson += ",";
+            statusJson += relayEnabled[i] ? "1" : "0";
+        }
+        statusJson += "]}";
+        notifyAll(statusJson);
+        Serial.println("Relay config updated");
+    }
+    else if(data.indexOf("\"set_volume\"") >= 0) {
+        int idx = data.indexOf("\"value\":");
+        if(idx >= 0) {
+            audioVolume = (uint8_t)data.substring(idx + 8).toInt();
+            if(audioVolume > 63) audioVolume = 63;
+            audio.setVolume(audioVolume);
+            saveAudioSettings();
+            mqttPublishAudio();
+        }
+    }
+    else if(data.indexOf("\"set_bass\"") >= 0) {
+        int idx = data.indexOf("\"value\":");
+        if(idx >= 0) {
+            audioBass = (int8_t)data.substring(idx + 8).toInt();
+            if(audioBass < -14) audioBass = -14;
+            if(audioBass > 14) audioBass = 14;
+            audio.setBass(audioBass);
+            saveAudioSettings();
+            mqttPublishAudio();
+        }
+    }
+    else if(data.indexOf("\"set_treble\"") >= 0) {
+        int idx = data.indexOf("\"value\":");
+        if(idx >= 0) {
+            audioTreble = (int8_t)data.substring(idx + 8).toInt();
+            if(audioTreble < -14) audioTreble = -14;
+            if(audioTreble > 14) audioTreble = 14;
+            audio.setTreble(audioTreble);
+            saveAudioSettings();
+            mqttPublishAudio();
         }
     }
     else if(data.indexOf("\"save_wifi\"") >= 0) {
@@ -537,11 +949,29 @@ void handleWSMessage(AsyncWebSocketClient* client, const String& data) {
         int pi = data.indexOf("\"port\":");
         if(pi >= 0) mqttPort = data.substring(pi + 7).toInt();
         int ei = data.indexOf("\"enabled\":");
-        if(ei >= 0) mqttEnabled = data.substring(ei + 10).startsWith("true");
+        if(ei >= 0) {
+            // Akceptuj zarówno true/false (bez cudzysłowu), jak i "true"/"false" (string)
+            String val = data.substring(ei + 10, ei + 15);
+            val.trim();
+            if(val.startsWith("true") || val.startsWith("1")) mqttEnabled = true;
+            else mqttEnabled = false;
+        }
         saveMqttSettings();
+        Serial.printf("MQTT: Config saved - enabled=%d, host=%s, port=%d\n", 
+                      mqttEnabled, mqttHost.c_str(), mqttPort);
         notifyAll("{\"type\":\"mqtt_saved\"}");
-        // Reconnect z nowymi ustawieniami
-        if(mqttClient.connected()) mqttClient.disconnect();
+        
+        // Disconnect i rekonfiguruj z nowymi parametrami
+        if(mqttClient.connected()) {
+            mqttClient.disconnect();
+            Serial.println("MQTT: Disconnecting to apply new config...");
+        }
+        
+        if(mqttEnabled && staConnected) {
+            Serial.println("MQTT: Reconfiguring with new parameters...");
+            setupMqtt();  // Zaktualizuj parametry (host, port, credentials)
+            // Połączenie nastąpi przez mqttReconnectIfNeeded() w loop()
+        }
     }
 }
 
@@ -567,18 +997,41 @@ void onWSEvent(AsyncWebSocket* server, AsyncWebSocketClient* client,
 // ============================================================
 // MQTT - callbacks
 // ============================================================
+void WiFiEvent(WiFiEvent_t event) {
+    switch(event) {
+        case SYSTEM_EVENT_STA_GOT_IP:
+            Serial.println("WiFi: Got IP - MQTT can now connect");
+            staConnected = true;
+            break;
+        case SYSTEM_EVENT_STA_DISCONNECTED:
+            Serial.println("WiFi: Disconnected - MQTT will disconnect");
+            staConnected = false;
+            mqttConnected = false;
+            break;
+        default:
+            break;
+    }
+}
+
 void onMqttConnect(bool sessionPresent) {
     mqttConnected = true;
     Serial.println("MQTT: Connected");
 
-    // Subscribe na temat /set
+    // Subscribe na temat /set (input)
     String subTopic = mqttTopic + "/set";
     mqttClient.subscribe(subTopic.c_str(), 0);
     Serial.println("MQTT: Subscribed to " + subTopic);
+    
+    // Subscribe na tematy audio
+    mqttClient.subscribe((mqttTopic + "/volume/set").c_str(), 0);
+    mqttClient.subscribe((mqttTopic + "/bass/set").c_str(), 0);
+    mqttClient.subscribe((mqttTopic + "/treble/set").c_str(), 0);
+    Serial.println("MQTT: Subscribed to audio topics");
 
     // Publish status online + aktualny stan
     mqttPublishStatus("online");
     mqttPublishInput(currentInput);
+    mqttPublishAudio();  // Publikuj początkowy stan audio
 
     // Powiadom web interface
     notifyAll("{\"type\":\"mqtt_connected\"}");
@@ -586,7 +1039,26 @@ void onMqttConnect(bool sessionPresent) {
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
     mqttConnected = false;
-    Serial.println("MQTT: Disconnected");
+    
+    // Wyświetl kod błędu
+    Serial.print("MQTT: Disconnected - reason: ");
+    switch(reason) {
+        case AsyncMqttClientDisconnectReason::TCP_DISCONNECTED:
+            Serial.println("TCP_DISCONNECTED"); break;
+        case AsyncMqttClientDisconnectReason::MQTT_UNACCEPTABLE_PROTOCOL_VERSION:
+            Serial.println("UNACCEPTABLE_PROTOCOL_VERSION"); break;
+        case AsyncMqttClientDisconnectReason::MQTT_IDENTIFIER_REJECTED:
+            Serial.println("IDENTIFIER_REJECTED"); break;
+        case AsyncMqttClientDisconnectReason::MQTT_SERVER_UNAVAILABLE:
+            Serial.println("SERVER_UNAVAILABLE"); break;
+        case AsyncMqttClientDisconnectReason::MQTT_MALFORMED_CREDENTIALS:
+            Serial.println("MALFORMED_CREDENTIALS"); break;
+        case AsyncMqttClientDisconnectReason::MQTT_NOT_AUTHORIZED:
+            Serial.println("NOT_AUTHORIZED - check username/password!"); break;
+        default:
+            Serial.println("UNKNOWN (" + String((int)reason) + ")"); break;
+    }
+    
     notifyAll("{\"type\":\"mqtt_disconnected\"}");
 }
 
@@ -607,6 +1079,46 @@ void onMqttMessage(char* topic, char* payload,
             notifyAll("{\"type\":\"input_changed\",\"input\":" + String(currentInput) + "}");
         }
     }
+    // {topic}/volume/set - ustaw głośność (0-100%)
+    else if(topicStr == mqttTopic + "/volume/set") {
+        int percent = msg.toInt();
+        if(percent >= 0 && percent <= 100) {
+            // Konwersja procent → PT2314E (inwersja!)
+            audioVolume = 63 - (percent * 63 / 100);
+            audio.setVolume(audioVolume);
+            saveAudioSettings();
+            notifyAll("{\"type\":\"audio_changed\",\"vol\":" + String(audioVolume) + 
+                     ",\"bass\":" + String(audioBass) + ",\"treble\":" + String(audioTreble) + "}");
+            mqttPublishAudio();
+            Serial.printf("MQTT: Volume set to %d%%\n", percent);
+        }
+    }
+    // {topic}/bass/set - ustaw bass (-14 do +14)
+    else if(topicStr == mqttTopic + "/bass/set") {
+        int val = msg.toInt();
+        if(val >= -14 && val <= 14) {
+            audioBass = (int8_t)val;
+            audio.setBass(audioBass);
+            saveAudioSettings();
+            notifyAll("{\"type\":\"audio_changed\",\"vol\":" + String(audioVolume) + 
+                     ",\"bass\":" + String(audioBass) + ",\"treble\":" + String(audioTreble) + "}");
+            mqttPublishAudio();
+            Serial.printf("MQTT: Bass set to %+d dB\n", audioBass);
+        }
+    }
+    // {topic}/treble/set - ustaw treble (-14 do +14)
+    else if(topicStr == mqttTopic + "/treble/set") {
+        int val = msg.toInt();
+        if(val >= -14 && val <= 14) {
+            audioTreble = (int8_t)val;
+            audio.setTreble(audioTreble);
+            saveAudioSettings();
+            notifyAll("{\"type\":\"audio_changed\",\"vol\":" + String(audioVolume) + 
+                     ",\"bass\":" + String(audioBass) + ",\"treble\":" + String(audioTreble) + "}");
+            mqttPublishAudio();
+            Serial.printf("MQTT: Treble set to %+d dB\n", audioTreble);
+        }
+    }
 }
 
 // ============================================================
@@ -615,23 +1127,23 @@ void onMqttMessage(char* topic, char* payload,
 void setupMqtt() {
     if(mqttHost.length() == 0 || !mqttEnabled) return;
 
-    mqttClient.onConnect(onMqttConnect);
-    mqttClient.onDisconnect(onMqttDisconnect);
-    mqttClient.onMessage(onMqttMessage);
-
     mqttClient.setServer(mqttHost.c_str(), mqttPort);
 
-    if(mqttUser.length() > 0)
+    if(mqttUser.length() > 0) {
         mqttClient.setCredentials(mqttUser.c_str(), mqttPass.c_str());
+        Serial.printf("MQTT: Using credentials - user='%s', pass='%s'\n", 
+                      mqttUser.c_str(), mqttPass.length() > 0 ? "***" : "(empty)");
+    } else {
+        Serial.println("MQTT: No credentials set (anonymous)");
+    }
 
     // Last Will Testament
     String lwtTopic = mqttTopic + "/status";
     mqttClient.setWill(lwtTopic.c_str(), 0, true, "offline");
 
     mqttClient.setClientId("AudioSwitcher");
-
-    mqttClient.connect();
-    Serial.printf("MQTT: Connecting to %s:%d\n", mqttHost.c_str(), mqttPort);
+    
+    Serial.printf("MQTT: Configured for %s:%d\n", mqttHost.c_str(), mqttPort);
 }
 
 void mqttReconnectIfNeeded() {
@@ -643,7 +1155,7 @@ void mqttReconnectIfNeeded() {
     if(now - mqttLastReconnect < MQTT_RECONNECT_DELAY) return;
     mqttLastReconnect = now;
 
-    Serial.println("MQTT: Reconnecting...");
+    Serial.println("MQTT: Attempting to connect...");
     mqttClient.connect();
 }
 
@@ -703,6 +1215,9 @@ void setupOTA() {
 // WIFI SETUP
 // ============================================================
 void setupWifi() {
+    // Register WiFi event handler PRZED WiFi.begin()
+    WiFi.onEvent(WiFiEvent);
+    
     WiFi.mode(WIFI_AP_STA);
     WiFi.softAP(AP_SSID, AP_PASS);
     Serial.println("WiFi: AP started - " + String(AP_SSID));
@@ -751,11 +1266,15 @@ void setupServer() {
 void handleIR(uint32_t code) {
     if(learningIR) {
         Serial.printf("IR learned: 0x%08X for %s\n", code, learningKey.c_str());
-        if(learningKey == "source")      irCodes[0] = code;
-        else if(learningKey == "input1") irCodes[1] = code;
-        else if(learningKey == "input2") irCodes[2] = code;
-        else if(learningKey == "input3") irCodes[3] = code;
-        else if(learningKey == "input4") irCodes[4] = code;
+        if(learningKey == "source")       irCodes[0] = code;
+        else if(learningKey == "input1")  irCodes[1] = code;
+        else if(learningKey == "input2")  irCodes[2] = code;
+        else if(learningKey == "input3")  irCodes[3] = code;
+        else if(learningKey == "input4")  irCodes[4] = code;
+        else if(learningKey == "volp")    irCodes[5] = code;
+        else if(learningKey == "volm")    irCodes[6] = code;
+        else if(learningKey == "up")      irCodes[7] = code;
+        else if(learningKey == "down")    irCodes[8] = code;
         learningIR = false;
         clearOverlay();
         String msg = "{\"type\":\"ir_received\",\"key\":\"" + learningKey + "\",\"code\":" + String(code) + "}";
@@ -766,7 +1285,23 @@ void handleIR(uint32_t code) {
     if(code == irCodes[0] && irCodes[0] != 0) {
         switchInput((currentInput + 1) % 4);
         notifyAll("{\"type\":\"input_changed\",\"input\":" + String(currentInput) + "}");
-    } else {
+    } 
+    // Vol+ / Vol- - regulacja aktywnego parametru
+    else if(code == irCodes[5] && irCodes[5] != 0) {
+        adjustAudio(-1);  // Vol+ = głośniej = mniejsza wartość PT2314E
+    }
+    else if(code == irCodes[6] && irCodes[6] != 0) {
+        adjustAudio(+1);  // Vol- = ciszej = większa wartość PT2314E
+    }
+    // ↑ / ↓ - zmiana fokusu
+    else if(code == irCodes[7] && irCodes[7] != 0) {
+        changeFocus(-1);  // ↑ = do góry listy
+    }
+    else if(code == irCodes[8] && irCodes[8] != 0) {
+        changeFocus(+1);  // ↓ = w dół listy
+    }
+    // Direct input select
+    else {
         for(int i = 0; i < 4; i++) {
             if(code == irCodes[i+1] && irCodes[i+1] != 0) {
                 switchInput(i);
@@ -784,7 +1319,7 @@ void setup() {
     Serial.begin(115200);
     delay(1000);
     Serial.println("\n╔═══════════════════════════════════════╗");
-    Serial.println("║      AUDIO SWITCHER v4.0              ║");
+    Serial.println("║      AUDIO SWITCHER v4.1              ║");
     Serial.println("╚═══════════════════════════════════════╝\n");
 
     // Backlight PWM
@@ -792,9 +1327,11 @@ void setup() {
     ledcAttachPin(TFT_BL, BL_CHANNEL);
     ledcWrite(BL_CHANNEL, BL_DEFAULT);
 
-    // Relay BT - domyślnie wyłączony
-    pinMode(RELAY_BT, OUTPUT);
-    digitalWrite(RELAY_BT, LOW);
+    // Relays - domyślnie wyłączone
+    for(uint8_t i = 0; i < 4; i++) {
+        pinMode(RELAY_PINS[i], OUTPUT);
+        digitalWrite(RELAY_PINS[i], LOW);
+    }
 
     // Display
     tft.init(SCREEN_H, SCREEN_W);
@@ -808,7 +1345,7 @@ void setup() {
     ledcWrite(BL_CHANNEL, brightness);
     tft.setRotation(dispRotate ? 3 : 1);
     tft.invertDisplay(dispInvert);
-    digitalWrite(RELAY_BT, currentInput == 1 ? HIGH : LOW);  // Przywróć stan BT
+    applyRelays(currentInput);  // Przywróć stan przekaźników
 
     // PT2314E
     Wire.begin(PT_SDA, PT_SCL);
@@ -828,7 +1365,12 @@ void setup() {
     // Web server + OTA
     setupServer();
 
-    // MQTT (tylko gdy STA połączony)
+    // MQTT - rejestruj callbacki (RAZ, na stałe)
+    mqttClient.onConnect(onMqttConnect);
+    mqttClient.onDisconnect(onMqttDisconnect);
+    mqttClient.onMessage(onMqttMessage);
+    
+    // MQTT - konfiguracja (parametry mogą się zmieniać)
     if(staConnected) setupMqtt();
 
     Serial.println("\n✓ System Ready!");
@@ -841,6 +1383,13 @@ void setup() {
 // LOOP
 // ============================================================
 void loop() {
+    // Audio overlay timeout - powrót do kafelków po 2s
+    if(audioOverlayActive && (millis() - audioOverlayStart > AUDIO_OVERLAY_TIMEOUT)) {
+        audioOverlayActive = false;
+        resetAudioOverlay();  // Reset dla następnego otwarcia
+        drawUI();
+    }
+
     // IR learning timeout
     if(learningIR && (millis() - learnStart > IR_LEARN_TIMEOUT)) {
         learningIR = false;
@@ -861,7 +1410,7 @@ void loop() {
         irrecv.resume();
     }
 
-    // MQTT reconnect
+    // MQTT reconnect only
     mqttReconnectIfNeeded();
 
     // WebSocket cleanup
