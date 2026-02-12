@@ -1,29 +1,31 @@
+
 // ============================================================
 // AUDIO SWITCHER v4.2
 // ESP32-WROOM-32 + PT2314E + ST7789 + IR + WiFi + WS + MQTT + OTA
+// Główny plik programu - obsługa logiki, sprzętu, sieci, MQTT, WebSocket, IR, NVS, UI
 // ============================================================
 
 #include <Arduino.h>
-#include <Wire.h>
-#include <SPI.h>
-#include <WiFi.h>
-#include <Preferences.h>
-#include <ESPAsyncWebServer.h>
+#include <Wire.h>         // I2C - sterowanie PT2314E
+#include <SPI.h>          // SPI - sterowanie wyświetlaczem
+#include <WiFi.h>         // WiFi - tryb AP/STA
+#include <Preferences.h>  // NVS - trwałe ustawienia
+#include <ESPAsyncWebServer.h> // Async WebServer - HTTP/WS
 #include <AsyncWebSocket.h>
-#include <AsyncMqttClient.h>
-#include <Update.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_ST7789.h>
-#include <IRrecv.h>
+#include <AsyncMqttClient.h>   // MQTT
+#include <Update.h>       // OTA
+#include <Adafruit_GFX.h> // Grafika
+#include <Adafruit_ST7789.h> // Wyświetlacz
+#include <IRrecv.h>       // Odbiornik IR
 #include <IRremoteESP8266.h>
 #include <IRutils.h>
-#include "PT2314.h"
-#include "icons.h"
-#include "logo.h"
-#include "web.h"
+#include "PT2314.h"      // Sterownik audio
+#include "icons.h"       // Ikony wejść
+#include "logo.h"        // Logo startowe
+#include "web.h"         // Wbudowany frontend (HTML)
 
 // ============================================================
-// PINS
+// PINS - definicje pinów ESP32
 // ============================================================
 #define TFT_CS    5
 #define TFT_DC   17
@@ -35,47 +37,62 @@
 #define IR_PIN   19
 #define TFT_BL   15
 
-// Relay pins - SSR high-level trigger
+
+// Przekaźniki - SSR, sterowanie wysokim poziomem
 #define RELAY_1  32
 #define RELAY_2  33
 #define RELAY_3  25
 #define RELAY_4  26
-const uint8_t RELAY_PINS[4] = {RELAY_1, RELAY_2, RELAY_3, RELAY_4};
+const uint8_t RELAY_PINS[4] = {RELAY_1, RELAY_2, RELAY_3, RELAY_4}; // Tablica pinów przekaźników
 
-// PWM backlight
-#define BL_CHANNEL   0
-#define BL_FREQ   5000
-#define BL_RES       8
-#define BL_DEFAULT 200
 
-// ============================================================
-// DISPLAY
-// ============================================================
-#define SCREEN_W 284
-#define SCREEN_H  76
+// PWM - podświetlenie TFT
+#define BL_CHANNEL   0      // Kanał PWM
+#define BL_FREQ   5000      // Częstotliwość
+#define BL_RES       8      // Rozdzielczość (8 bitów)
+#define BL_DEFAULT 200      // Domyślna jasność
+
 
 // ============================================================
-// WiFi AP defaults
+// DISPLAY - parametry ekranu
+// ============================================================
+#define SCREEN_W 284   // Szerokość ekranu
+#define SCREEN_H  76   // Wysokość ekranu
+
+
+// ============================================================
+// WiFi AP defaults - dane do trybu Access Point
 // ============================================================
 #define AP_SSID  "AudioSwitcher"
 #define AP_PASS  "audio1234"
 #define AP_IP    "192.168.4.1"
 
-// ============================================================
-// IR
-// ============================================================
-#define IR_DEBOUNCE      300
-#define IR_LEARN_TIMEOUT 10000
 
 // ============================================================
-// MQTT defaults
+// IR - parametry obsługi pilota
 // ============================================================
-#define MQTT_RECONNECT_DELAY 5000
-#define MQTT_TOPIC_DEFAULT   "audio_switcher"
+#define IR_DEBOUNCE      300     // Debounce IR (ms)
+#define IR_LEARN_TIMEOUT 10000   // Timeout nauki IR (ms)
+
 
 // ============================================================
-// KOLORY
+// MQTT defaults - domyślne ustawienia MQTT
 // ============================================================
+#define MQTT_RECONNECT_DELAY 5000      // Opóźnienie ponownego łączenia (ms)
+#define MQTT_TOPIC_DEFAULT   "audio_switcher" // Domyślny topic
+
+#define COLOR_BG       0x0000   // Tło (czarny)
+#define COLOR_ACTIVE   0x07E0   // Aktywny (zielony)
+#define COLOR_INACTIVE 0x0000   // Nieaktywny (czarny)
+#define COLOR_BORDER   0x4A69   // Ramka
+#define COLOR_WHITE    0xFFFF   // Biały
+#define COLOR_GRAY     0x8410   // Szary
+#define COLOR_GREEN    0x07E0   // Zielony
+#define COLOR_RED      0xF800   // Czerwony
+#define COLOR_YELLOW   0xFFE0   // Żółty
+#define COLOR_BLUE     0x001F   // Niebieski
+#define COLOR_CYAN     0x07FF   // Cyan
+#define COLOR_ORANGE   0xFD20   // Pomarańczowy
 #define COLOR_BG       0x0000
 #define COLOR_ACTIVE   0x07E0
 #define COLOR_INACTIVE 0x0000
@@ -89,74 +106,76 @@ const uint8_t RELAY_PINS[4] = {RELAY_1, RELAY_2, RELAY_3, RELAY_4};
 #define COLOR_CYAN     0x07FF  // Cyan (jaśniejszy niebieski)
 #define COLOR_ORANGE   0xFD20  // Pomarańczowy
 
-// ============================================================
-// LAYOUT kafelków
-// ============================================================
+#define TILE_MARGIN  5
+#define TILE_H      (SCREEN_H - TILE_MARGIN * 2)
+#define TILE_W      ((SCREEN_W - TILE_MARGIN * 5) / 4)
+#define TILE_RADIUS  6
+// Layout kafelków wejść na ekranie
 #define TILE_MARGIN  5
 #define TILE_H      (SCREEN_H - TILE_MARGIN * 2)
 #define TILE_W      ((SCREEN_W - TILE_MARGIN * 5) / 4)
 #define TILE_RADIUS  6
 
-// ============================================================
-// NAZWY WEJŚĆ
-// ============================================================
-const char* INPUT_NAMES[] = {"Input1", "Input2", "Input3", "Input4"};
-const uint16_t* INPUT_ICONS[] = {icon_input1, icon_input2, icon_input3, icon_input4};
 
 // ============================================================
-// GLOBALS
+// NAZWY WEJŚĆ i ikony
 // ============================================================
-Adafruit_ST7789  tft    = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST);
-IRrecv           irrecv(IR_PIN);
-PT2314           audio;
-AsyncWebServer   server(80);
-AsyncWebSocket   ws("/ws");
-AsyncMqttClient  mqttClient;
-Preferences      prefs;
+const char* INPUT_NAMES[] = {"Input1", "Input2", "Input3", "Input4"}; // Nazwy wejść
+const uint16_t* INPUT_ICONS[] = {icon_input1, icon_input2, icon_input3, icon_input4}; // Ikony wejść
 
-uint8_t       currentInput  = 0;
-unsigned long lastIR        = 0;
+
+// ============================================================
+// GLOBALS - zmienne globalne, instancje klas, stany
+// ============================================================
+Adafruit_ST7789  tft    = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST); // Wyświetlacz
+IRrecv           irrecv(IR_PIN);    // Odbiornik IR
+PT2314           audio;             // Sterownik audio
+AsyncWebServer   server(80);        // Serwer HTTP
+AsyncWebSocket   ws("/ws");        // WebSocket
+AsyncMqttClient  mqttClient;        // MQTT klient
+Preferences      prefs;             // NVS
+
+uint8_t       currentInput  = 0;    // Aktualnie wybrane wejście (0-3)
+unsigned long lastIR        = 0;    // Czas ostatniego odebrania IR
 
 // IR kody (ładowane z NVS)
-uint32_t irCodes[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
-// 0=source, 1-4=input1-4, 5=vol+, 6=vol-, 7=up, 8=down
+uint32_t irCodes[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0}; // Kody IR: 0=source, 1-4=input1-4, 5=vol+, 6=vol-, 7=up, 8=down
 
 // IR learning state
-bool          learningIR  = false;
-String        learningKey = "";
-unsigned long learnStart  = 0;
+bool          learningIR  = false;  // Czy trwa nauka IR
+String        learningKey = "";     // Klucz do nauki IR
+unsigned long learnStart  = 0;      // Start nauki IR
 
 // WiFi state
-String wifiSSID     = "";
-String wifiPass     = "";
-String localIP      = "";
-bool   staConnected = false;
+String wifiSSID     = "";           // SSID WiFi
+String wifiPass     = "";           // Hasło WiFi
+String localIP      = "";           // IP w trybie STA
+bool   staConnected = false;        // Czy połączono z WiFi
 
 // Backlight
-uint8_t brightness = BL_DEFAULT;
+uint8_t brightness = BL_DEFAULT;    // Jasność podświetlenia
 
 // Display settings
-bool dispInvert = false;
-bool dispRotate = false;
+bool dispInvert = false;            // Inwersja kolorów
+bool dispRotate = false;            // Obrót ekranu
 
 // MQTT state
-String        mqttHost    = "";
-uint16_t      mqttPort    = 1883;
-String        mqttUser    = "";
-String        mqttPass    = "";
-String        mqttTopic   = MQTT_TOPIC_DEFAULT;
-bool          mqttEnabled = false;
-bool          mqttConnected = false;
-bool          mqttSetupDone = false;  // Track if setupMqtt() has been called once
-unsigned long mqttLastReconnect = 0;
+String        mqttHost    = "";     // Host MQTT
+uint16_t      mqttPort    = 1883;   // Port MQTT
+String        mqttUser    = "";     // Użytkownik MQTT
+String        mqttPass    = "";     // Hasło MQTT
+String        mqttTopic   = MQTT_TOPIC_DEFAULT; // Topic MQTT
+bool          mqttEnabled = false;  // Czy MQTT włączone
+bool          mqttConnected = false;// Czy połączono z MQTT
+bool          mqttSetupDone = false;// Czy setupMqtt() już wywołane
+unsigned long mqttLastReconnect = 0;// Czas ostatnej próby połączenia
 
 // OTA state
-bool otaInProgress = false;
-
+bool otaInProgress = false;         // Czy trwa OTA
 
 // Relay enable - czy dane wejście steruje swoim przekaźnikiem
 // relayEnabled[i] = true → Input(i+1) włącza Relay(i+1)
-bool relayEnabled[4] = {false, false, false, false};
+bool relayEnabled[4] = {false, false, false, false}; // Maska przekaźników
 
 // Audio settings
 uint8_t audioVolume = 0;    // 0-63 (0=max, 63=mute - odwrotna skala PT2314E)
@@ -164,16 +183,18 @@ int8_t  audioBass   = 0;    // -14 do +14 dB
 int8_t  audioTreble = 0;    // -14 do +14 dB
 
 // Audio overlay state
-bool          audioOverlayActive = false;
-bool          audioOverlayDrawn  = false;  // Czy struktura została narysowana
-unsigned long audioOverlayStart  = 0;
-uint8_t       audioFocus         = 0;  // 0=Volume, 1=Bass, 2=Treble
-#define AUDIO_OVERLAY_TIMEOUT 2000
+bool          audioOverlayActive = false;   // Czy overlay audio jest aktywny
+bool          audioOverlayDrawn  = false;   // Czy overlay został narysowany
+unsigned long audioOverlayStart  = 0;       // Czas startu overlay
+uint8_t       audioFocus         = 0;       // 0=Volume, 1=Bass, 2=Treble
+#define AUDIO_OVERLAY_TIMEOUT 2000           // Timeout overlay (ms)
 
 
+#include <Arduino.h>
 // ============================================================
-// NVS
+// NVS - obsługa trwałych ustawień (Preferences)
 // ============================================================
+// Wczytaj wszystkie ustawienia z NVS
 void loadPrefs() {
     prefs.begin("switcher", false);
 
@@ -214,18 +235,21 @@ void loadPrefs() {
     Serial.println("NVS: Prefs loaded");
 }
 
+// Zapisz ostatnio wybrane wejście do NVS
 void saveLastInput(uint8_t input) {
     prefs.begin("switcher", false);
     prefs.putUChar("last_input", input);
     prefs.end();
 }
 
+// Zapisz jasność podświetlenia do NVS
 void saveBrightness(uint8_t val) {
     prefs.begin("switcher", false);
     prefs.putUChar("brightness", val);
     prefs.end();
 }
 
+// Zapisz ustawienia wyświetlacza (obrót, inwersja) do NVS
 void saveDisplaySettings() {
     prefs.begin("switcher", false);
     prefs.putBool("disp_invert", dispInvert);
@@ -233,6 +257,7 @@ void saveDisplaySettings() {
     prefs.end();
 }
 
+// Zapisz kody IR do NVS
 void saveIRCodes() {
     prefs.begin("switcher", false);
     prefs.putUInt("ir_source", irCodes[0]);
@@ -248,6 +273,7 @@ void saveIRCodes() {
     Serial.println("NVS: IR codes saved");
 }
 
+// Zapisz dane WiFi do NVS
 void saveWifiCreds(const String& ssid, const String& pass) {
     prefs.begin("switcher", false);
     prefs.putString("wifi_ssid", ssid);
@@ -256,6 +282,7 @@ void saveWifiCreds(const String& ssid, const String& pass) {
     Serial.println("NVS: WiFi saved");
 }
 
+// Zapisz ustawienia MQTT do NVS
 void saveMqttSettings() {
     prefs.begin("switcher", false);
     prefs.putString("mqtt_host",  mqttHost);
@@ -268,6 +295,7 @@ void saveMqttSettings() {
     Serial.println("NVS: MQTT saved");
 }
 
+// Zapisz maskę przekaźników do NVS
 void saveRelayEnabled() {
     prefs.begin("switcher", false);
     prefs.putBool("relay_en0", relayEnabled[0]);
@@ -279,6 +307,7 @@ void saveRelayEnabled() {
 }
 
 
+// Zapisz ustawienia audio do NVS
 void saveAudioSettings() {
     prefs.begin("switcher", false);
     prefs.putUChar("audio_vol",  audioVolume);
@@ -288,17 +317,19 @@ void saveAudioSettings() {
     Serial.println("NVS: Audio settings saved");
 }
 
-// ============================================================
-// DISPLAY - forward declarations
-// ============================================================
-void drawUI();
-void notifyAll(const String& msg);
-void setupMqtt();
-void mqttPublishAudio();
 
 // ============================================================
-// RELAY CONTROL
+// DISPLAY - deklaracje funkcji związanych z UI
 // ============================================================
+void drawUI();                    // Rysuje główny interfejs
+void notifyAll(const String& msg); // Wysyła wiadomość do wszystkich klientów WS
+void setupMqtt();                  // Konfiguruje klienta MQTT
+void mqttPublishAudio();           // Publikuje stan audio do MQTT
+
+// ============================================================
+// RELAY CONTROL - sterowanie przekaźnikami
+// ============================================================
+// Ustawia stany przekaźników na podstawie wybranego wejścia i maski relayEnabled
 void applyRelays(uint8_t input) {
     for(uint8_t i = 0; i < 4; i++) {
         // Relay(i) aktywny tylko gdy: aktywny jest Input(i) ORAZ ten relay jest włączony
@@ -310,7 +341,7 @@ void applyRelays(uint8_t input) {
 }
 
 // ============================================================
-// DISPLAY SETTINGS
+// DISPLAY SETTINGS - stosuje ustawienia ekranu
 // ============================================================
 void applyDisplaySettings() {
     tft.setRotation(dispRotate ? 3 : 1);
@@ -320,7 +351,7 @@ void applyDisplaySettings() {
 }
 
 // ============================================================
-// DISPLAY - ikona z PROGMEM
+// DISPLAY - rysowanie ikony z PROGMEM
 // ============================================================
 void drawIcon(int16_t x, int16_t y, const uint16_t* icon, uint16_t bg) {
     uint16_t buf[ICON_W];
@@ -334,7 +365,7 @@ void drawIcon(int16_t x, int16_t y, const uint16_t* icon, uint16_t bg) {
 }
 
 // ============================================================
-// DISPLAY - kafelek
+// DISPLAY - rysowanie kafelka wejścia
 // ============================================================
 void drawTile(uint8_t index, bool active) {
     uint16_t x = TILE_MARGIN + index * (TILE_W + TILE_MARGIN);
@@ -355,19 +386,22 @@ void drawTile(uint8_t index, bool active) {
     drawIcon(iconX, iconY, INPUT_ICONS[index], COLOR_INACTIVE);
 }
 
+// Rysuje cały interfejs (wszystkie kafelki)
 void drawUI() {
     tft.fillScreen(COLOR_BG);
     for(uint8_t i = 0; i < 4; i++) drawTile(i, i == currentInput);
 }
 
+// Aktualizuje wyświetlanie po zmianie wejścia
 void updateInput(uint8_t oldInput, uint8_t newInput) {
     drawTile(oldInput, false);
     drawTile(newInput, true);
 }
 
 // ============================================================
-// DISPLAY - overlaye
+// DISPLAY - overlaye (paski, komunikaty)
 // ============================================================
+// Overlay z informacją o WiFi
 void showWifiOverlay(const String& line1, const String& line2, uint16_t color) {
     tft.fillRect(0, 0, SCREEN_W, 14, COLOR_BG);
     tft.setTextSize(1);
@@ -380,6 +414,7 @@ void showWifiOverlay(const String& line1, const String& line2, uint16_t color) {
     }
 }
 
+// Overlay z informacją o IR
 void showIROverlay(const String& msg) {
     tft.fillRect(0, 0, SCREEN_W, 14, COLOR_BG);
     tft.setTextSize(1);
@@ -388,6 +423,7 @@ void showIROverlay(const String& msg) {
     tft.print(msg);
 }
 
+// Overlay z postępem OTA
 void showOTAOverlay(int percent) {
     tft.fillRect(0, 0, SCREEN_W, 14, COLOR_BG);
     tft.setTextSize(1);
@@ -399,6 +435,7 @@ void showOTAOverlay(int percent) {
     tft.fillRect(60, 4, barW, 6, COLOR_GREEN);
 }
 
+// Czyści overlay (górny pasek)
 void clearOverlay() {
     tft.fillRect(0, 0, SCREEN_W, 14, COLOR_BG);
     for(uint8_t i = 0; i < 4; i++) {
@@ -418,8 +455,9 @@ void clearOverlay() {
 // ============================================================
 
 // ============================================================
-// AUDIO GRADIENT COLORS
+// AUDIO GRADIENT COLORS - kolory pasków audio
 // ============================================================
+// Zwraca kolor paska głośności w zależności od poziomu
 uint16_t getVolumeColor(uint8_t volume) {
     // Volume: 0=max głośno, 63=mute cicho
     // Inwersja: 0-63 → 63-0
@@ -432,6 +470,7 @@ uint16_t getVolumeColor(uint8_t volume) {
     return COLOR_RED;                        // 71-100% = czerwony (głośno, niebezpieczne)
 }
 
+// Zwraca kolor paska bass/treble w zależności od wartości
 uint16_t getToneColor(int8_t value) {
     // Bass/Treble: -14 do +14
     if(value <= -5) return COLOR_CYAN;       // -14 do -5 = cyan (dużo cut)
@@ -439,10 +478,12 @@ uint16_t getToneColor(int8_t value) {
     return COLOR_GREEN;                      // -4 do +4 = zielony (neutralnie)
 }
 
+// Wymusza pełny redraw overlay audio przy następnym otwarciu
 void resetAudioOverlay() {
-    audioOverlayDrawn = false;  // Wymusza pełny redraw przy następnym otwarciu
+    audioOverlayDrawn = false; 
 }
 
+// Rysuje overlay audio (3 paski: volume, bass, treble)
 void showAudioOverlay() {
     static uint8_t lastFocus = 255;
     bool firstDraw = !audioOverlayDrawn || (lastFocus == 255);
@@ -452,7 +493,7 @@ void showAudioOverlay() {
     int arrowX = 4;
     int labelX = 16;
     int barX = 70;
-    int barW = SCREEN_W - barX - 40;  // Skrócony żeby nie nakładał się na wartości
+    int barW = SCREEN_W - barX - 40; 
     int barH = 8;
     
     // Jeśli pierwszy raz lub zmiana fokusu → narysuj strukturę
@@ -487,7 +528,7 @@ void showAudioOverlay() {
         lastFocus = audioFocus;
     }
     
-    // ── Odśwież tylko wartości i wypełnienia pasków ──────────────────────────
+    // Odśwież tylko wartości i wypełnienia pasków
     int centerX = barX + barW / 2;
     
     // Volume - czyść obszar paska i wartość
@@ -548,7 +589,7 @@ void showAudioOverlay() {
 
 
 // ============================================================
-// DISPLAY - splash
+// DISPLAY - splash screen (logo startowe)
 // ============================================================
 void showSplash() {
     tft.startWrite();
@@ -567,7 +608,7 @@ void showSplash() {
 }
 
 // ============================================================
-// BACKLIGHT
+// BACKLIGHT - ustawianie jasności podświetlenia
 // ============================================================
 void setBrightness(uint8_t val) {
     brightness = val;
@@ -575,7 +616,7 @@ void setBrightness(uint8_t val) {
 }
 
 // ============================================================
-// AUDIO ADJUSTMENT
+// AUDIO ADJUSTMENT - regulacja parametrów audio (volume, bass, treble)
 // ============================================================
 void adjustAudio(int delta) {
     // Reguluje parametr wskazywany przez audioFocus
@@ -626,6 +667,7 @@ void adjustAudio(int delta) {
     showAudioOverlay();
 }
 
+// Zmiana fokusu (volume/bass/treble) w overlay audio
 void changeFocus(int delta) {
     audioFocus = (audioFocus + delta + 3) % 3;  // 0-2 z wraparound
     resetAudioOverlay();  // Zmiana fokusu - wymaga pełnego redraw
@@ -636,7 +678,7 @@ void changeFocus(int delta) {
 }
 
 // ============================================================
-// AUDIO
+// AUDIO - inicjalizacja układu audio PT2314E
 // ============================================================
 void initAudio(uint8_t input) {
     audio.setVolume(audioVolume);
@@ -648,8 +690,9 @@ void initAudio(uint8_t input) {
 }
 
 // ============================================================
-// MQTT - publish
+// MQTT - publish - publikowanie stanu do MQTT
 // ============================================================
+// Publikuje aktualny input do MQTT
 void mqttPublishInput(uint8_t input) {
     if(!mqttConnected) return;
     String topic = mqttTopic + "/state";
@@ -658,12 +701,14 @@ void mqttPublishInput(uint8_t input) {
     Serial.printf("MQTT pub: %s = %s\n", topic.c_str(), payload.c_str());
 }
 
+// Publikuje status (online/offline) do MQTT
 void mqttPublishStatus(const char* status) {
     if(!mqttConnected) return;
     String topic = mqttTopic + "/status";
     mqttClient.publish(topic.c_str(), 0, true, status);
 }
 
+// Publikuje stan audio (volume, bass, treble) do MQTT
 void mqttPublishAudio() {
     if(!mqttConnected) return;
     
@@ -687,7 +732,7 @@ void mqttPublishAudio() {
 }
 
 // ============================================================
-// INPUT SWITCH
+// INPUT SWITCH - zmiana wejścia audio
 // ============================================================
 void switchInput(uint8_t newInput) {
     if(newInput > 3) return;
@@ -702,7 +747,7 @@ void switchInput(uint8_t newInput) {
 }
 
 // ============================================================
-// WEBSOCKET - status JSON
+// WEBSOCKET - budowanie statusu JSON dla frontendu
 // ============================================================
 String buildStatusJSON() {
     String json = "{\"type\":\"status\"";
@@ -742,12 +787,13 @@ String buildStatusJSON() {
     return json;
 }
 
+// Wysyła wiadomość do wszystkich klientów WebSocket
 void notifyAll(const String& msg) {
     ws.textAll(msg);
 }
 
 // ============================================================
-// WEBSOCKET - obsługa wiadomości
+// WEBSOCKET - obsługa wiadomości od klienta (JSON)
 // ============================================================
 void handleWSMessage(AsyncWebSocketClient* client, const String& data) {
     Serial.println("WS: " + data);
@@ -976,7 +1022,7 @@ void handleWSMessage(AsyncWebSocketClient* client, const String& data) {
 }
 
 // ============================================================
-// WEBSOCKET - event handler
+// WEBSOCKET - event handler (połączenie, rozłączenie, dane)
 // ============================================================
 void onWSEvent(AsyncWebSocket* server, AsyncWebSocketClient* client,
                AwsEventType type, void* arg, uint8_t* data, size_t len) {
@@ -995,8 +1041,9 @@ void onWSEvent(AsyncWebSocket* server, AsyncWebSocketClient* client,
 }
 
 // ============================================================
-// MQTT - callbacks
+// MQTT - callbacks (połączenie, rozłączenie, wiadomości)
 // ============================================================
+// Callback zdarzeń WiFi (połączenie/rozłączenie)
 void WiFiEvent(WiFiEvent_t event) {
     switch(event) {
         case SYSTEM_EVENT_STA_GOT_IP:
@@ -1013,6 +1060,7 @@ void WiFiEvent(WiFiEvent_t event) {
     }
 }
 
+// Callback po połączeniu z MQTT
 void onMqttConnect(bool sessionPresent) {
     mqttConnected = true;
     Serial.println("MQTT: Connected");
@@ -1037,6 +1085,7 @@ void onMqttConnect(bool sessionPresent) {
     notifyAll("{\"type\":\"mqtt_connected\"}");
 }
 
+// Callback po rozłączeniu z MQTT
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
     mqttConnected = false;
     
@@ -1062,6 +1111,7 @@ void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
     notifyAll("{\"type\":\"mqtt_disconnected\"}");
 }
 
+// Callback po odebraniu wiadomości MQTT
 void onMqttMessage(char* topic, char* payload,
                    AsyncMqttClientMessageProperties properties,
                    size_t len, size_t index, size_t total) {
@@ -1122,7 +1172,7 @@ void onMqttMessage(char* topic, char* payload,
 }
 
 // ============================================================
-// MQTT - setup i reconnect
+// MQTT - konfiguracja klienta MQTT
 // ============================================================
 void setupMqtt() {
     if(mqttHost.length() == 0 || !mqttEnabled) return;
@@ -1146,6 +1196,7 @@ void setupMqtt() {
     Serial.printf("MQTT: Configured for %s:%d\n", mqttHost.c_str(), mqttPort);
 }
 
+// Próba ponownego połączenia z MQTT jeśli potrzeba
 void mqttReconnectIfNeeded() {
     if(!mqttEnabled || mqttHost.length() == 0) return;
     if(mqttConnected) return;
@@ -1160,7 +1211,7 @@ void mqttReconnectIfNeeded() {
 }
 
 // ============================================================
-// OTA - setup
+// OTA - konfiguracja endpointu OTA
 // ============================================================
 void setupOTA() {
     // Endpoint odbioru pliku .bin
@@ -1212,7 +1263,7 @@ void setupOTA() {
 }
 
 // ============================================================
-// WIFI SETUP
+// WIFI SETUP - konfiguracja WiFi (AP/STA)
 // ============================================================
 void setupWifi() {
     // Register WiFi event handler PRZED WiFi.begin()
@@ -1247,7 +1298,7 @@ void setupWifi() {
 }
 
 // ============================================================
-// SERVER SETUP
+// SERVER SETUP - konfiguracja serwera HTTP/WebSocket/OTA
 // ============================================================
 void setupServer() {
     ws.onEvent(onWSEvent);
@@ -1261,7 +1312,7 @@ void setupServer() {
 }
 
 // ============================================================
-// IR
+// IR - obsługa odebranego kodu IR
 // ============================================================
 void handleIR(uint32_t code) {
     if(learningIR) {
@@ -1313,7 +1364,7 @@ void handleIR(uint32_t code) {
 }
 
 // ============================================================
-// SETUP
+// SETUP - główna inicjalizacja systemu
 // ============================================================
 void setup() {
     Serial.begin(115200);
@@ -1380,7 +1431,7 @@ void setup() {
 }
 
 // ============================================================
-// LOOP
+// LOOP - główna pętla programu
 // ============================================================
 void loop() {
     // Audio overlay timeout - powrót do kafelków po 2s
