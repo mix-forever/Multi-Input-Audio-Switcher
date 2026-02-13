@@ -1,6 +1,6 @@
 # 🎛️ Audio Switcher v4.2
 
-**Professional 4-channel audio switcher with PT2314E processor, LCD display, IR remote, and full IoT integration**
+**Professional 4-channel audio switcher with PT2314E processor, LCD display, IR remote with auto-repeat and full IoT integration**
 
 ![ESP32](https://img.shields.io/badge/ESP32-WROOM--32U-blue)
 ![PlatformIO](https://img.shields.io/badge/PlatformIO-compatible-orange)
@@ -13,13 +13,15 @@
 
 - [Features](#-features)
 - [Hardware](#-hardware)
-- [Software Architecture](#-software-architecture)
 - [Installation](#-installation)
+- [⚠️ TFT_eSPI Configuration](#-tft_espi-configuration)
 - [Web Interface](#-web-interface)
 - [MQTT API](#-mqtt-api)
-- [IR Remote Control](#-ir-remote-control)
+- [IR Remote](#-ir-remote)
 - [Configuration](#-configuration)
 - [Troubleshooting](#-troubleshooting)
+- [Technical Specifications](#-technical-specifications)
+- [Changelog v4.2](#-changelog-v42)
 - [License](#-license)
 
 ---
@@ -28,35 +30,29 @@
 
 ### Audio Processing
 - **4 audio inputs** with seamless switching
-- **PT2314E audio processor** with:
+- **PT2314E audio processor**:
   - Volume control (0-63, 0.25dB steps)
   - Bass control (-14 to +14 dB)
   - Treble control (-14 to +14 dB)
-- **SSR relay control** (4 channels) for external equipment
-- **NVS persistence** - all settings survive power cycles
+- **SSR relay control** (4 channels)
+- **NVS persistence** - all settings survive restart
 
-### Display & Control
-- **ST7789 LCD** (284x76) with Material Design UI
-- **Real-time audio overlay** with:
-  - Volume, Bass, Treble visualization
-  - Gradient color coding (green → yellow → red)
-  - 4-button control (Vol+/Vol-, ↑/↓ focus)
-  - 2-second timeout to tiles view
-- **IR remote learning** - program any remote control
-- **LED backlight** with PWM brightness control
+### Display and Control
+- **ST7789 LCD Display** (284x76) with Material Design
+- **Sprite rendering** - smooth animations without flicker
+- **Audio overlay** with gradients and gloss:
+  - Volume: Green→Yellow→Red
+  - Bass/Treble: Cyan→Green→Orange
+  - White gloss on all bars
+- **IR remote learning** - universal recognition (NEC, RC6, Samsung, Sony, LG)
+- **Auto-repeat** for Vol+/Vol-/↑/↓ - hold for continuous adjustment
 
 ### Connectivity
-- **Dual WiFi** (AP mode for setup + STA mode for network)
-- **WebSocket real-time sync** between all control methods
-- **MQTT integration** with full bidirectional control
-- **OTA firmware updates** via web interface
-- **Material Design WebUI** optimized for mobile & desktop
-
-### Smart Home Integration
-- **Home Assistant** ready
-- **Node-RED** compatible
-- **MQTT auto-discovery** support
-- **RESTful status API**
+- **Dual WiFi** (AP + STA)
+- **WebSocket** - real-time synchronization
+- **MQTT** - full bidirectional control
+- **OTA** - firmware updates via WebUI
+- **Home Assistant ready** 🏠
 
 ---
 
@@ -64,286 +60,218 @@
 
 ### Components
 
-| Component | Model | Purpose |
-|-----------|-------|---------|
-| MCU | ESP32-WROOM-32U | Main controller |
-| Audio Processor | PT2314E | Volume/Bass/Treble control |
-| Display | ST7789 284x76 | Visual feedback |
-| IR Receiver | VS1838B (or compatible) | Remote control input |
-| Relays | 4x SSR (high-level trigger) | External equipment control |
-| Power | 5V/2A | System power supply |
-
-### Pin Configuration
-
-```cpp
-// Display (SPI)
-TFT_CS    = 5
-TFT_DC    = 17
-TFT_RST   = 16
-TFT_MOSI  = 23
-TFT_SCLK  = 18
-TFT_BL    = 15  // PWM backlight
-
-// Audio (I2C)
-PT_SDA    = 21
-PT_SCL    = 22
-
-// Control
-IR_PIN    = 19
-
-// Relays (SSR high-level trigger)
-RELAY_1   = 32
-RELAY_2   = 33
-RELAY_3   = 25
-RELAY_4   = 26
-```
-
-### Wiring Diagram
-
-```
-ESP32-WROOM-32U
-├── ST7789 LCD (SPI)
-│   ├── CS   → GPIO5
-│   ├── DC   → GPIO17
-│   ├── RST  → GPIO16
-│   ├── MOSI → GPIO23
-│   ├── SCLK → GPIO18
-│   └── BL   → GPIO15 (PWM)
-├── PT2314E (I2C)
-│   ├── SDA  → GPIO21
-│   └── SCL  → GPIO22
-├── IR Receiver
-│   └── OUT  → GPIO19
-└── SSR Relays
-    ├── IN1  → GPIO32
-    ├── IN2  → GPIO33
-    ├── IN3  → GPIO25
-    └── IN4  → GPIO26
-```
-
----
-
-## 🏗️ Software Architecture
-
-### System Overview
-
-```
-┌─────────────────────────────────────────────────┐
-│                   ESP32 Core                    │
-├─────────────────────────────────────────────────┤
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐       │
-│  │ PT2314E  │  │ ST7789   │  │ IR Recv  │       │
-│  │  Audio   │  │  Display │  │  Remote  │       │
-│  └──────────┘  └──────────┘  └──────────┘       │
-├─────────────────────────────────────────────────┤
-│               Control Layer                     │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐       │
-│  │ WebUI    │  │ MQTT     │  │ IR Code  │       │
-│  │ WebSocket│  │ Pub/Sub  │  │ Learning │       │
-│  └──────────┘  └──────────┘  └──────────┘       │
-├─────────────────────────────────────────────────┤
-│             Storage & Network                   │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐       │
-│  │   NVS    │  │  WiFi    │  │   OTA    │       │
-│  │ Settings │  │ AP + STA │  │ Updates  │       │
-│  └──────────┘  └──────────┘  └──────────┘       │
-└─────────────────────────────────────────────────┘
-```
-
-### Key Features
-
-- **Event-driven architecture** with WebSocket for real-time updates
-- **State persistence** via ESP32 NVS (Non-Volatile Storage)
-- **Modular design** - easy to extend with new features
-- **Thread-safe** MQTT and WebSocket handlers
-- **Debounced inputs** for IR remote reliability
+| Component | Model | Pin |
+|-----------|-------|-----|
+| Microcontroller | ESP32-WROOM-32U | - |
+| Audio Processor | PT2314E | SDA=21, SCL=22 |
+| Display | ST7789 284x76 | CS=5, DC=17, RST=16 |
+| IR Receiver | VS1838B | OUT=19 |
+| Relays | 4x SSR | 32, 33, 25, 26 |
 
 ---
 
 ## 📦 Installation
 
-### Prerequisites
-
-- **PlatformIO** (recommended) or Arduino IDE
-- **ESP32 board support** installed
-- **USB driver** for ESP32 (CP210x or CH340)
-
 ### Quick Start
 
-1. **Clone the repository**
 ```bash
 git clone https://github.com/yourusername/audio-switcher.git
 cd audio-switcher
-```
-
-2. **Install dependencies** (PlatformIO auto-installs)
-```bash
 pio lib install
-```
-
-3. **Build and upload**
-```bash
+# IMPORTANT: Configure TFT_eSPI (see below!)
 pio run --target upload
 ```
 
-4. **Monitor serial output**
-```bash
-pio device monitor -b 115200
+### platformio.ini
+
+```ini
+[env:esp32-wroom-32]
+platform = espressif32
+board = esp32dev
+framework = arduino
+board_build.partitions = min_spiffs.csv
+
+lib_deps =
+    bodmer/TFT_eSPI@^2.5.43
+    crankyoldgit/IRremoteESP8266@^2.8.6
+    esphome/ESPAsyncWebServer-esphome@^3.1.0
+    https://github.com/OttoWinter/async-mqtt-client.git
 ```
 
-### Dependencies
+---
 
-All dependencies are auto-installed from `platformio.ini`:
-- Adafruit GFX Library
-- Adafruit ST7735 and ST7789 Library
-- ESPAsyncWebServer
-- AsyncTCP
-- AsyncMqttClient
-- IRremoteESP8266
+## ⚠️ TFT_eSPI Configuration
+
+### CRITICAL - Manual Configuration Required!
+
+The ST7789 284x76 display requires **3 modifications** to the TFT_eSPI library.
+
+**Library location:**
+```
+~/.platformio/packages/framework-arduinoespressif32/libraries/TFT_eSPI/
+```
+
+---
+
+### Modification 1: User_Setup.h
+
+**File:** `User_Setup.h`
+
+**1. Uncomment driver:**
+```cpp
+#define ST7789_DRIVER
+```
+
+**2. Set resolution:**
+```cpp
+#define TFT_WIDTH  76
+#define TFT_HEIGHT 284
+```
+
+---
+
+### Modification 2: ST7789_Defines.h (OFFSET)
+
+**File:** `TFT_Drivers/ST7789_Defines.h`
+
+**Add at the end of file:**
+```cpp
+// ALI ST7789P3 2.25 TFT support (always use offset)
+#if (TFT_HEIGHT == 284) && (TFT_WIDTH == 76)
+  #ifndef CGRAM_OFFSET
+    #define CGRAM_OFFSET
+  #endif
+#endif
+```
+
+**Why:** This display requires automatic offset for correct pixel addressing.
+
+---
+
+### Modification 3: ST7789_Rotation.h (CUSTOM OFFSETS)
+
+**File:** `TFT_Drivers/ST7789_Rotation.h`
+
+**Find the `switch(rotation)` section and add to case 1 and case 3:**
+
+```cpp
+switch (rotation) {
+  case 0: // Portrait
+    // ... existing code ...
+    break;
+
+  case 1: // Landscape (Portrait + 90)
+    // ... existing code ...
+    
+    // ADD THIS:
+    else if (_init_width == 76)
+    {
+      colstart = 18;
+      rowstart = 82;
+    }
+    break;
+
+  case 2: // Inverted portrait
+    // ... existing code ...
+    break;
+
+  case 3: // Inverted landscape
+    // ... existing code ...
+    
+    // ADD THIS:
+    else if (_init_width == 76)
+    {
+      colstart = 18;
+      rowstart = 82;
+    }
+    break;
+}
+```
+
+**Why:** These offsets (18, 82) align the image on the physical 76x284 display.
+
+---
+
+### Verification in Project
+
+**In `main.cpp`:**
+```cpp
+tft.init();
+tft.setSwapBytes(true);   // IMPORTANT for RGB565!
+tft.setRotation(3);       // Uses case 3 with offsets
+```
+
+---
+
+### ⚠️ Library Update Warning
+
+**Problem:** Updating `TFT_eSPI` will overwrite these changes!
+
+**Solutions:**
+1. **Document these changes** (keep in project README)
+2. **After update** reapply modifications
+3. **Or:** Lock library version in `platformio.ini`:
+   ```ini
+   bodmer/TFT_eSPI@2.5.43  # Locked version
+   ```
+
+---
+
+### 🔗 Sources and Credits
+
+- **ua6em** - discovered offsets for this display
+- **Arduino Forum:** [ST7789P3 2.25" Setup](https://forum.arduino.cc/t/tft-espi-setup-for-st7789p3-2-25-76x284-tft/1407473/14)
+- **TFT_eSPI GitHub:** [bodmer/TFT_eSPI](https://github.com/Bodmer/TFT_eSPI)
 
 ---
 
 ## 🌐 Web Interface
 
 ### Access
-
-- **AP Mode:** http://192.168.4.1 (SSID: AudioSwitcher, password: audio1234)
-- **STA Mode:** http://[device-ip] (shown in serial console)
+- **AP:** http://192.168.4.1 (SSID: AudioSwitcher, password: audio1234)
+- **STA:** http://[device-ip]
 
 ### Features
-
-#### 🎵 Audio Control
-- **4 input tiles** - click to switch between sources
-- **Volume slider** (0-100%) with live gradient colors
-- **Bass slider** (-14 to +14 dB)
-- **Treble slider** (-14 to +14 dB)
-- **Real-time sync** with LCD and IR remote
-
-#### 🔌 Relay Control
-- **4 toggle switches** - one per input
-- **Auto-apply** when switching inputs
-- **Visual feedback** - green when enabled
-
-#### 📺 Display Settings
-- **Brightness control** (PWM 10-255)
-- **Color inversion** toggle
-- **Rotation** (0° or 180°)
-
-#### 📡 Remote Control
-- **IR code learning** with 10-second countdown
-- **Clear individual codes** with confirmation
-- **Save all codes** in one action
-- Supported keys: Source, Input1-4, Vol+/-, ↑/↓
-
-#### 📶 Network Settings
-- **WiFi SSID/Password** configuration
-- **Test connection** before committing
-- **Save & Restart** to apply changes
-
-#### 🔗 MQTT Configuration
-- **Enable/Disable** toggle with instant feedback
-- **Broker settings** (host, port)
-- **Authentication** (username, password)
-- **Topic prefix** customization
-- **Connection status** (Disabled/Connecting/Connected/Disconnected)
-
-#### 🔄 Firmware Update
-- **Drag & drop** or click to browse
-- **Progress bar** with percentage
-- **Auto-restart** on success
+- 🎵 **4 input tiles** with depth effect
+- 🎚️ **Audio sliders** with gradients (Volume, Bass, Treble)
+- 🔌 **Relays** - toggle for each input
+- 📡 **IR learning** - all protocols
+- 📶 **WiFi configuration** with connection test
+- 🔗 **MQTT** - broker, auth, prefix
+- 🔄 **OTA** - drag & drop firmware with progressbar
 
 ---
 
 ## 📡 MQTT API
 
-### Connection Settings
+### Subscribed Topics (Commands)
 
-Default configuration:
+```bash
+# Switch input (1-4)
+mosquitto_pub -t audio_switcher/set -m "2"
+
+# Set volume (0-100%)
+mosquitto_pub -t audio_switcher/volume/set -m "75"
+
+# Set bass (-14 to +14 dB)
+mosquitto_pub -t audio_switcher/bass/set -m "5"
+
+# Set treble (-14 to +14 dB)
+mosquitto_pub -t audio_switcher/treble/set -m "-3"
+```
+
+### Published Topics (Status)
+
 ```yaml
-mqtt:
-  base_topic: audio_switcher
-  port: 1883
-  qos: 0
+audio_switcher/status:  "online"/"offline" (LWT, retained)
+audio_switcher/state:   1-4 (retained)
+audio_switcher/audio:   {"volume":75,"volume_raw":15,"bass":5,"treble":-2}
 ```
-
-### Subscribe Topics (Commands)
-
-#### Switch Input
-```
-Topic: audio_switcher/set
-Payload: 1-4 (input number)
-Example: mosquitto_pub -t audio_switcher/set -m "3"
-```
-
-#### Set Volume
-```
-Topic: audio_switcher/volume/set
-Payload: 0-100 (percent)
-Example: mosquitto_pub -t audio_switcher/volume/set -m "75"
-```
-
-#### Set Bass
-```
-Topic: audio_switcher/bass/set
-Payload: -14 to +14 (dB)
-Example: mosquitto_pub -t audio_switcher/bass/set -m "5"
-```
-
-#### Set Treble
-```
-Topic: audio_switcher/treble/set
-Payload: -14 to +14 (dB)
-Example: mosquitto_pub -t audio_switcher/treble/set -m "-3"
-```
-
-### Publish Topics (Status)
-
-#### Device Status (Last Will Testament)
-```
-Topic: audio_switcher/status
-Payload: "online" | "offline"
-Retained: true
-```
-
-#### Current Input
-```
-Topic: audio_switcher/state
-Payload: 1-4
-Retained: true
-```
-
-#### Audio State
-```
-Topic: audio_switcher/audio
-Payload: JSON
-Retained: false
-
-Example:
-{
-  "volume": 75,        // percent 0-100
-  "volume_raw": 15,    // PT2314E raw (0=max, 63=min)
-  "bass": 5,           // -14 to +14 dB
-  "treble": -2         // -14 to +14 dB
-}
-```
-
-**Published automatically when:**
-- Device connects to MQTT
-- Input is changed
-- Audio parameter is adjusted (from any source: IR, WebUI, MQTT)
 
 ### Home Assistant Integration
 
 ```yaml
-# configuration.yaml
 mqtt:
-  switch:
-    - name: "Audio Input TV"
-      command_topic: "audio_switcher/set"
-      payload_on: "1"
-      state_topic: "audio_switcher/state"
-      state_on: "1"
-      
   number:
     - name: "Audio Volume"
       command_topic: "audio_switcher/volume/set"
@@ -351,136 +279,82 @@ mqtt:
       value_template: "{{ value_json.volume }}"
       min: 0
       max: 100
-      unit_of_measurement: "%"
-      
-    - name: "Audio Bass"
-      command_topic: "audio_switcher/bass/set"
-      state_topic: "audio_switcher/audio"
-      value_template: "{{ value_json.bass }}"
-      min: -14
-      max: 14
-      unit_of_measurement: "dB"
-      
-    - name: "Audio Treble"
-      command_topic: "audio_switcher/treble/set"
-      state_topic: "audio_switcher/audio"
-      value_template: "{{ value_json.treble }}"
-      min: -14
-      max: 14
-      unit_of_measurement: "dB"
-```
-
-### Command Line Examples
-
-```bash
-# Subscribe to all topics
-mosquitto_sub -h 10.4.0.7 -u vds -P password -t "audio_switcher/#" -v
-
-# Switch to input 2
-mosquitto_pub -h 10.4.0.7 -u vds -P password -t audio_switcher/set -m "2"
-
-# Set volume to 80%
-mosquitto_pub -h 10.4.0.7 -u vds -P password -t audio_switcher/volume/set -m "80"
-
-# Boost bass +6dB
-mosquitto_pub -h 10.4.0.7 -u vds -P password -t audio_switcher/bass/set -m "6"
-
-# Cut treble -4dB
-mosquitto_pub -h 10.4.0.7 -u vds -P password -t audio_switcher/treble/set -m "-4"
 ```
 
 ---
 
-## 🎮 IR Remote Control
+## 🎮 IR Remote
 
-### Learning Mode
+### Supported Protocols
+✅ NEC, RC6, Samsung, Sony, RC5, LG, Panasonic  
+✅ **RC6 Mode 6** - hash-based matching (ignores toggle bit)  
+✅ **Auto-repeat** for Vol+/Vol-/↑/↓
 
-1. Click **Learn** button in WebUI next to desired function
-2. LCD displays "IR: Press button for [function]..."
-3. Point your remote at IR receiver
-4. Press the button you want to assign
-5. LCD shows the learned code
-6. Repeat for all functions
+### Functions
 
-### Supported Functions
+| Button | Action | Auto-Repeat |
+|--------|--------|-------------|
+| Source | Switch inputs (1→2→3→4) | ❌ |
+| Input 1-4 | Direct selection | ❌ |
+| Vol+ | Increase parameter | ✅ 500ms + 150ms |
+| Vol- | Decrease parameter | ✅ 500ms + 150ms |
+| ↑ | Focus up | ✅ 500ms + 150ms |
+| ↓ | Focus down | ✅ 500ms + 150ms |
 
-| Function | Description |
-|----------|-------------|
-| **Source** | Cycle through inputs (1→2→3→4→1) |
-| **Input 1-4** | Direct selection of input |
-| **Vol+** | Increase active parameter |
-| **Vol-** | Decrease active parameter |
-| **↑** | Change focus (Volume→Bass→Treble) |
-| **↓** | Change focus (Treble→Bass→Volume) |
+### RC6 Mode 6 - Special Handling
+
+**Problem:** Toggle bit changes with each press.
+
+**Solution:** Hash from raw timing:
+```cpp
+// Round to 100us + hash entire signal
+for(int i = 5; i < rawlen; i++) {
+    uint16_t val = (rawbuf[i] / 100) * 100;
+    hash = (hash * 31 + val) & 0xFFFFFFFF;
+}
+```
+
+**Result:** Same button = same hash! 🎯
 
 ### Audio Overlay Navigation
 
-Press **Vol+**, **Vol-**, **↑**, or **↓** to show the audio overlay:
-
 ```
-> VOLUME   [████████████████        ] 75%
+> VOLUME   [████████████████        ] 75%  ← Green frame
   BASS     [      ████              ] +5
   TREBLE   [    ██                  ] -2
 ```
 
-**Features:**
-- **Focus indicator:** `>` shows active parameter
-- **Color coding:**
-  - Volume: Green (safe) → Yellow (normal) → Red (loud)
-  - Bass/Treble: Cyan (cut) → Green (neutral) → Orange (boost)
-- **Navigation:** ↑/↓ changes focus, Vol+/- adjusts value
-- **Auto-hide:** Returns to input tiles after 2 seconds
-
-### Clearing Codes
-
-1. Click **Clear** button in WebUI
-2. Confirm the action
-3. Code is removed and shows "not set"
+- **↑/↓** - change focus
+- **Vol+/-** - adjust value
+- **Auto-hide** after 2 seconds
 
 ---
 
 ## ⚙️ Configuration
 
-### First-Time Setup
+### First Boot
 
-1. **Power on** - device creates WiFi AP "AudioSwitcher"
-2. **Connect** to AP (password: `audio1234`)
-3. **Navigate** to http://192.168.4.1
-4. **Configure WiFi** in Network Settings
-5. **Test connection** before saving
-6. **Save & Restart** - device connects to your network
-
-### WiFi Configuration
-
-#### Via WebUI
-1. Go to **WiFi Settings**
-2. Enter SSID and password
-3. Click **Test** to verify
-4. Click **Save & Restart**
-
-#### Via Code (before first upload)
-```cpp
-// In main.cpp
-#define DEFAULT_SSID "YourNetwork"
-#define DEFAULT_PASS "YourPassword"
-```
+1. Power on → WiFi AP "AudioSwitcher"
+2. Connect (password: audio1234)
+3. Navigate to http://192.168.4.1
+4. Configure WiFi → Test → Save
+5. Restart → connects to network
 
 ### MQTT Setup
 
 1. Enable MQTT toggle
-2. Enter broker IP/hostname
-3. Enter port (default: 1883)
-4. Add credentials if required
-5. Set topic prefix (default: audio_switcher)
-6. Click **Save**
-7. Status shows **Connecting...** then **Connected**
+2. Host + port (default 1883)
+3. Authentication (optional)
+4. Topic prefix
+5. Save → Status: Connected ✅
 
-### Relay Assignment
+### IR Remote Learning
 
-1. For each input, toggle desired relays
-2. Changes save automatically
-3. When you switch to that input, assigned relays activate
-4. Example: Input 1 → Relay 1 ON (powers amplifier)
+1. Click **Learn** next to function
+2. Press button on remote (10s window)
+3. System saves code/hash
+4. Repeat for all buttons
+5. Test: press Vol+ → should increase volume 🔊
 
 ---
 
@@ -488,132 +362,115 @@ Press **Vol+**, **Vol-**, **↑**, or **↓** to show the audio overlay:
 
 ### Display Issues
 
-**Symptom:** Black screen or garbage
-- Check SPI wiring (CS, DC, RST, MOSI, SCLK)
-- Verify backlight is connected to GPIO15
-- Test backlight with PWM (should dim/brighten)
+**Black screen:**
+- Check SPI wiring
+- **Verify TFT_eSPI configuration** (see section above!)
+- Check `CGRAM_OFFSET` and offsets in init()
+- Test backlight (GPIO15)
 
-**Symptom:** Display inverted or rotated wrong
-- Use WebUI Display Settings to adjust
-- Or edit `dispRotate` and `dispInvert` in code
+**Wrong colors:**
+- Add `tft.setSwapBytes(true)` in setup()
 
-### Audio Issues
+### IR Issues
 
-**Symptom:** No sound from PT2314E
-- Check I2C wiring (SDA=21, SCL=22)
-- Verify PT2314E has 5V power
-- Test I2C scan: Should detect device at 0x44
-- Check input switching (relay clicks?)
+**Remote doesn't work:**
+- GPIO19 correctly connected
+- 5V power to receiver
+- Check Serial logs - shows protocol and code
 
-**Symptom:** Volume/Bass/Treble not working
-- Use WebUI to test controls
-- Check serial console for PT2314E commands
-- Try factory reset and reconfigure
+**Same button - different codes:**
+- Normal for RC6 Mode 6 (toggle bit)
+- System uses hash-based matching
+- Hash should be stable
 
-### WiFi Connection
+**Auto-repeat doesn't work:**
+- Check if learned as Vol+/Vol-/↑/↓
+- Hold >500ms
 
-**Symptom:** Can't connect to network
-- Verify SSID and password in WebUI
-- Check 2.4GHz WiFi (ESP32 doesn't support 5GHz)
-- Try AP mode fallback: "AudioSwitcher" network
+### OTA Issues
 
-**Symptom:** WiFi drops frequently
-- Check signal strength (RSSI in serial)
-- Move closer to router
-- Reduce WiFi power save in code
-
-### MQTT Issues
-
-**Symptom:** Won't connect to broker
-- Verify broker IP and port
-- Test broker: `mosquitto_pub -h [IP] -t test -m "hello"`
-- Check username/password
-- Look for error codes in serial:
-  - `TCP_DISCONNECTED`: Network issue
-  - `NOT_AUTHORIZED`: Wrong credentials
-  - `SERVER_UNAVAILABLE`: Broker offline
-
-**Symptom:** Connects then disconnects
-- Check Last Will Testament conflicts
-- Verify QoS settings
-- Increase `MQTT_RECONNECT_DELAY` if broker is slow
-
-### IR Remote
-
-**Symptom:** Remote not learning codes
-- Check IR receiver wiring (OUT → GPIO19)
-- Verify 5V power to receiver
-- Test with known working remote
-- Some protocols not supported by library
-
-**Symptom:** Learned codes don't work
-- Re-learn the code (10-second window)
-- Check if remote uses rolling codes (not supported)
-- Try different remote or buttons
-
-### OTA Updates
-
-**Symptom:** Upload fails
-- Check free heap (needs ~150KB)
-- Verify .bin file is valid firmware
-- Try smaller firmware (disable features)
-- Upload via USB if OTA keeps failing
-
-### Serial Console
-
-Expected boot output:
-```
-╔═══════════════════════════════════════╗
-║      AUDIO SWITCHER v4.2              ║
-╚═══════════════════════════════════════╝
-
-NVS: Prefs loaded
-WiFi: Connected! IP: 10.4.8.93
-MQTT: Connected
-✓ System Ready!
-  AP:  http://192.168.4.1
-  STA: http://10.4.8.93
-  MQTT: 10.4.0.7:1883
-```
+**Firmware doesn't boot:**
+- Check `board_build.partitions = min_spiffs.csv`
+- Logs should show app0 ↔ app1 switching
+- If always app0 - partition problem
 
 ---
 
 ## 📝 Technical Specifications
 
-### Audio Performance
-- **Frequency Response:** 20Hz - 20kHz
-- **THD+N:** <0.1% @ 1kHz
+### Audio
+- **Bandwidth:** 20Hz-20kHz
+- **THD+N:** <0.1%
 - **SNR:** >90dB
-- **Volume Range:** 0 to -79dB (0.25dB steps)
-- **Bass/Treble Range:** ±14dB (2dB steps)
 
-### System Performance
-- **Boot Time:** ~3 seconds
-- **Input Switch:** <50ms
-- **WebSocket Latency:** <100ms
-- **MQTT Latency:** <200ms
-- **Display Refresh:** 60fps (overlay)
+### System
+- **Boot:** ~3s
+- **Switch:** <50ms
+- **WebSocket:** <100ms
+- **Display:** 60fps (sprite)
 
-### Power Consumption
-- **Idle:** ~200mA @ 5V (1W)
-- **Active:** ~300mA @ 5V (1.5W)
-- **Peak:** ~500mA @ 5V (2.5W)
+### IR
+- **Tolerance:** 30%
+- **Buffer:** 300 raw values
+- **Debounce:** 300ms
+- **Auto-repeat:** 500ms + 150ms rate
+
+### Memory
+- **Flash:** 4MB
+- **Partitions:**
+  - app0: 1.875MB
+  - app1: 1.875MB (OTA)
+  - SPIFFS: 192KB
+
+---
+
+## 📋 Changelog v4.2
+
+### 🆕 New Features
+- ✨ Migration to TFT_eSPI
+- 🎨 Sprite rendering (60fps, zero flicker)
+- 🌈 Gradient + gloss on bars
+- 📡 Universal IR (NEC, RC6, Samsung, Sony)
+- 🔄 Auto-repeat Vol+/Vol-/↑/↓
+- 🎯 RC6 Mode 6 hash-based matching
+- 🚀 OTA with gradient progressbar
+
+### 🔧 Fixes
+- ✅ RC6 toggle bit handling
+- ✅ OTA partition switching
+- ✅ MQTT callback deduplication
+- ✅ Audio persistence from all sources
+- ✅ FormData for OTA upload
+
+### 🎨 Visual Improvements
+- Rounded corners (radius 4px)
+- Triple border on active tiles
+- Green frame on active bar
+- Gradient boost 0-40
+- White gloss effect
 
 ---
 
 ## 📄 License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+MIT License - see [LICENSE](LICENSE)
 
 ---
 
 ## 🙏 Acknowledgments
 
-- **Adafruit** - ST7789 display library
-- **me-no-dev** - ESPAsyncWebServer & AsyncTCP
-- **marvinroger** - AsyncMqttClient
+- **Bodmer** - TFT_eSPI library
 - **crankyoldgit** - IRremoteESP8266
-- **Espressif** - ESP32 framework
+- **me-no-dev** - ESPAsyncWebServer
+- **marvinroger** - AsyncMqttClient
+- **ua6em** - ST7789 284x76 offsets discovery
+
+---
+
+## 🔗 Links
+
+- **TFT_eSPI Setup:** [Arduino Forum](https://forum.arduino.cc/t/tft-espi-setup-for-st7789p3-2-25-76x284-tft/1407473/14)
+- **IRremoteESP8266:** [GitHub](https://github.com/crankyoldgit/IRremoteESP8266)
 
 ---
 
