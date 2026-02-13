@@ -1,7 +1,7 @@
 // ============================================================
 // Auto-generated web interface - PROGMEM
 // Generated from: index.html
-// Size: 102804 bytes
+// Size: 102955 bytes
 // ============================================================
 #pragma once
 #include <pgmspace.h>
@@ -1244,6 +1244,10 @@ function otaUpload(file) {
   setOtaProgress(0, 'Uploading...');
   showToast('Uploading firmware...', '');
 
+  // WAŻNE: Użyj FormData dla multipart/form-data
+  const formData = new FormData();
+  formData.append('update', file);
+
   const xhr = new XMLHttpRequest();
   xhr.open('POST', '/update');
 
@@ -1260,7 +1264,7 @@ function otaUpload(file) {
       if (res.ok) {
         setOtaProgress(100, 'Success! Rebooting...');
         showToast('Update success! Device rebooting...', 'green');
-        setTimeout(() => location.reload(), 3000);
+        setTimeout(() => location.reload(), 5000);
       } else {
         setOtaProgress(0, 'Failed: ' + (res.error || 'Unknown error'));
         showToast('Update failed: ' + (res.error || 'Unknown error'), 'red');
@@ -1276,7 +1280,8 @@ function otaUpload(file) {
     showToast('Network error during upload', 'red');
   };
 
-  xhr.send(file);
+  // Wyślij jako FormData
+  xhr.send(formData);
 }
 
 function setOtaProgress(percent, text) {

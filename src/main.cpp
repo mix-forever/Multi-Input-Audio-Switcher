@@ -1,31 +1,29 @@
-
 // ============================================================
 // AUDIO SWITCHER v4.2
 // ESP32-WROOM-32 + PT2314E + ST7789 + IR + WiFi + WS + MQTT + OTA
-// Główny plik programu - obsługa logiki, sprzętu, sieci, MQTT, WebSocket, IR, NVS, UI
 // ============================================================
 
 #include <Arduino.h>
-#include <Wire.h>         // I2C - sterowanie PT2314E
-#include <SPI.h>          // SPI - sterowanie wyświetlaczem
-#include <WiFi.h>         // WiFi - tryb AP/STA
-#include <Preferences.h>  // NVS - trwałe ustawienia
-#include <ESPAsyncWebServer.h> // Async WebServer - HTTP/WS
+#include <Wire.h>
+#include <SPI.h>
+#include <WiFi.h>
+#include <Preferences.h>
+#include <ESPAsyncWebServer.h>
 #include <AsyncWebSocket.h>
-#include <AsyncMqttClient.h>   // MQTT
-#include <Update.h>       // OTA
-#include <Adafruit_GFX.h> // Grafika
-#include <Adafruit_ST7789.h> // Wyświetlacz
-#include <IRrecv.h>       // Odbiornik IR
+#include <AsyncMqttClient.h>
+#include <Update.h>
+#include <esp_ota_ops.h>
+#include <TFT_eSPI.h>
+#include <IRrecv.h>
 #include <IRremoteESP8266.h>
 #include <IRutils.h>
-#include "PT2314.h"      // Sterownik audio
-#include "icons.h"       // Ikony wejść
-#include "logo.h"        // Logo startowe
-#include "web.h"         // Wbudowany frontend (HTML)
+#include "PT2314.h"
+#include "icons.h"
+#include "logo.h"
+#include "web.h"
 
 // ============================================================
-// PINS - definicje pinów ESP32
+// PINS
 // ============================================================
 #define TFT_CS    5
 #define TFT_DC   17
@@ -37,62 +35,47 @@
 #define IR_PIN   19
 #define TFT_BL   15
 
-
-// Przekaźniki - SSR, sterowanie wysokim poziomem
+// Relay pins - SSR high-level trigger
 #define RELAY_1  32
 #define RELAY_2  33
 #define RELAY_3  25
 #define RELAY_4  26
-const uint8_t RELAY_PINS[4] = {RELAY_1, RELAY_2, RELAY_3, RELAY_4}; // Tablica pinów przekaźników
+const uint8_t RELAY_PINS[4] = {RELAY_1, RELAY_2, RELAY_3, RELAY_4};
 
-
-// PWM - podświetlenie TFT
-#define BL_CHANNEL   0      // Kanał PWM
-#define BL_FREQ   5000      // Częstotliwość
-#define BL_RES       8      // Rozdzielczość (8 bitów)
-#define BL_DEFAULT 200      // Domyślna jasność
-
+// PWM backlight
+#define BL_CHANNEL   0
+#define BL_FREQ   5000
+#define BL_RES       8
+#define BL_DEFAULT 200
 
 // ============================================================
-// DISPLAY - parametry ekranu
+// DISPLAY
 // ============================================================
-#define SCREEN_W 284   // Szerokość ekranu
-#define SCREEN_H  76   // Wysokość ekranu
-
+#define SCREEN_W 284
+#define SCREEN_H  76
 
 // ============================================================
-// WiFi AP defaults - dane do trybu Access Point
+// WiFi AP defaults
 // ============================================================
 #define AP_SSID  "AudioSwitcher"
 #define AP_PASS  "audio1234"
 #define AP_IP    "192.168.4.1"
 
+// ============================================================
+// IR
+// ============================================================
+#define IR_DEBOUNCE      300
+#define IR_LEARN_TIMEOUT 10000
 
 // ============================================================
-// IR - parametry obsługi pilota
+// MQTT defaults
 // ============================================================
-#define IR_DEBOUNCE      300     // Debounce IR (ms)
-#define IR_LEARN_TIMEOUT 10000   // Timeout nauki IR (ms)
-
+#define MQTT_RECONNECT_DELAY 5000
+#define MQTT_TOPIC_DEFAULT   "audio_switcher"
 
 // ============================================================
-// MQTT defaults - domyślne ustawienia MQTT
+// KOLORY
 // ============================================================
-#define MQTT_RECONNECT_DELAY 5000      // Opóźnienie ponownego łączenia (ms)
-#define MQTT_TOPIC_DEFAULT   "audio_switcher" // Domyślny topic
-
-#define COLOR_BG       0x0000   // Tło (czarny)
-#define COLOR_ACTIVE   0x07E0   // Aktywny (zielony)
-#define COLOR_INACTIVE 0x0000   // Nieaktywny (czarny)
-#define COLOR_BORDER   0x4A69   // Ramka
-#define COLOR_WHITE    0xFFFF   // Biały
-#define COLOR_GRAY     0x8410   // Szary
-#define COLOR_GREEN    0x07E0   // Zielony
-#define COLOR_RED      0xF800   // Czerwony
-#define COLOR_YELLOW   0xFFE0   // Żółty
-#define COLOR_BLUE     0x001F   // Niebieski
-#define COLOR_CYAN     0x07FF   // Cyan
-#define COLOR_ORANGE   0xFD20   // Pomarańczowy
 #define COLOR_BG       0x0000
 #define COLOR_ACTIVE   0x07E0
 #define COLOR_INACTIVE 0x0000
@@ -106,76 +89,83 @@ const uint8_t RELAY_PINS[4] = {RELAY_1, RELAY_2, RELAY_3, RELAY_4}; // Tablica p
 #define COLOR_CYAN     0x07FF  // Cyan (jaśniejszy niebieski)
 #define COLOR_ORANGE   0xFD20  // Pomarańczowy
 
+// ============================================================
+// LAYOUT kafelków
+// ============================================================
 #define TILE_MARGIN  5
 #define TILE_H      (SCREEN_H - TILE_MARGIN * 2)
 #define TILE_W      ((SCREEN_W - TILE_MARGIN * 5) / 4)
 #define TILE_RADIUS  6
-// Layout kafelków wejść na ekranie
-#define TILE_MARGIN  5
-#define TILE_H      (SCREEN_H - TILE_MARGIN * 2)
-#define TILE_W      ((SCREEN_W - TILE_MARGIN * 5) / 4)
-#define TILE_RADIUS  6
-
 
 // ============================================================
-// NAZWY WEJŚĆ i ikony
+// NAZWY WEJŚĆ
 // ============================================================
-const char* INPUT_NAMES[] = {"Input1", "Input2", "Input3", "Input4"}; // Nazwy wejść
-const uint16_t* INPUT_ICONS[] = {icon_input1, icon_input2, icon_input3, icon_input4}; // Ikony wejść
-
+const char* INPUT_NAMES[] = {"Input1", "Input2", "Input3", "Input4"};
+const uint16_t* INPUT_ICONS[] = {icon_input1, icon_input2, icon_input3, icon_input4};
 
 // ============================================================
-// GLOBALS - zmienne globalne, instancje klas, stany
+// GLOBALS
 // ============================================================
-Adafruit_ST7789  tft    = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST); // Wyświetlacz
-IRrecv           irrecv(IR_PIN);    // Odbiornik IR
-PT2314           audio;             // Sterownik audio
-AsyncWebServer   server(80);        // Serwer HTTP
-AsyncWebSocket   ws("/ws");        // WebSocket
-AsyncMqttClient  mqttClient;        // MQTT klient
-Preferences      prefs;             // NVS
+TFT_eSPI tft = TFT_eSPI();
+TFT_eSprite audioSprite = TFT_eSprite(&tft);
 
-uint8_t       currentInput  = 0;    // Aktualnie wybrane wejście (0-3)
-unsigned long lastIR        = 0;    // Czas ostatniego odebrania IR
+IRrecv           irrecv(IR_PIN, 300, 15, true);  // pin, buffer_size, timeout, use_modulation
+PT2314           audio;
+AsyncWebServer   server(80);
+AsyncWebSocket   ws("/ws");
+AsyncMqttClient  mqttClient;
+Preferences      prefs;
+
+uint8_t       currentInput  = 0;
+unsigned long lastIR        = 0;
+
+// IR auto-repeat dla Vol+/Vol-/↑/↓
+uint32_t      lastIRCode    = 0;
+unsigned long lastIRTime    = 0;
+bool          irRepeating   = false;
+#define IR_REPEAT_DELAY  500   // Opóźnienie przed startem auto-repeat (ms)
+#define IR_REPEAT_RATE   150   // Interwał między powtórzeniami (ms)
 
 // IR kody (ładowane z NVS)
-uint32_t irCodes[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0}; // Kody IR: 0=source, 1-4=input1-4, 5=vol+, 6=vol-, 7=up, 8=down
+uint32_t irCodes[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
+// 0=source, 1-4=input1-4, 5=vol+, 6=vol-, 7=up, 8=down
 
 // IR learning state
-bool          learningIR  = false;  // Czy trwa nauka IR
-String        learningKey = "";     // Klucz do nauki IR
-unsigned long learnStart  = 0;      // Start nauki IR
+bool          learningIR  = false;
+String        learningKey = "";
+unsigned long learnStart  = 0;
 
 // WiFi state
-String wifiSSID     = "";           // SSID WiFi
-String wifiPass     = "";           // Hasło WiFi
-String localIP      = "";           // IP w trybie STA
-bool   staConnected = false;        // Czy połączono z WiFi
+String wifiSSID     = "";
+String wifiPass     = "";
+String localIP      = "";
+bool   staConnected = false;
 
 // Backlight
-uint8_t brightness = BL_DEFAULT;    // Jasność podświetlenia
+uint8_t brightness = BL_DEFAULT;
 
 // Display settings
-bool dispInvert = false;            // Inwersja kolorów
-bool dispRotate = false;            // Obrót ekranu
+bool dispInvert = false;
+bool dispRotate = false;
 
 // MQTT state
-String        mqttHost    = "";     // Host MQTT
-uint16_t      mqttPort    = 1883;   // Port MQTT
-String        mqttUser    = "";     // Użytkownik MQTT
-String        mqttPass    = "";     // Hasło MQTT
-String        mqttTopic   = MQTT_TOPIC_DEFAULT; // Topic MQTT
-bool          mqttEnabled = false;  // Czy MQTT włączone
-bool          mqttConnected = false;// Czy połączono z MQTT
-bool          mqttSetupDone = false;// Czy setupMqtt() już wywołane
-unsigned long mqttLastReconnect = 0;// Czas ostatnej próby połączenia
+String        mqttHost    = "";
+uint16_t      mqttPort    = 1883;
+String        mqttUser    = "";
+String        mqttPass    = "";
+String        mqttTopic   = MQTT_TOPIC_DEFAULT;
+bool          mqttEnabled = false;
+bool          mqttConnected = false;
+bool          mqttSetupDone = false;  // Track if setupMqtt() has been called once
+unsigned long mqttLastReconnect = 0;
 
 // OTA state
-bool otaInProgress = false;         // Czy trwa OTA
+bool otaInProgress = false;
+
 
 // Relay enable - czy dane wejście steruje swoim przekaźnikiem
 // relayEnabled[i] = true → Input(i+1) włącza Relay(i+1)
-bool relayEnabled[4] = {false, false, false, false}; // Maska przekaźników
+bool relayEnabled[4] = {false, false, false, false};
 
 // Audio settings
 uint8_t audioVolume = 0;    // 0-63 (0=max, 63=mute - odwrotna skala PT2314E)
@@ -183,18 +173,16 @@ int8_t  audioBass   = 0;    // -14 do +14 dB
 int8_t  audioTreble = 0;    // -14 do +14 dB
 
 // Audio overlay state
-bool          audioOverlayActive = false;   // Czy overlay audio jest aktywny
-bool          audioOverlayDrawn  = false;   // Czy overlay został narysowany
-unsigned long audioOverlayStart  = 0;       // Czas startu overlay
-uint8_t       audioFocus         = 0;       // 0=Volume, 1=Bass, 2=Treble
-#define AUDIO_OVERLAY_TIMEOUT 2000           // Timeout overlay (ms)
+bool          audioOverlayActive = false;
+bool          audioOverlayDrawn  = false;  // Czy struktura została narysowana
+unsigned long audioOverlayStart  = 0;
+uint8_t       audioFocus         = 0;  // 0=Volume, 1=Bass, 2=Treble
+#define AUDIO_OVERLAY_TIMEOUT 2000
 
 
-#include <Arduino.h>
 // ============================================================
-// NVS - obsługa trwałych ustawień (Preferences)
+// NVS
 // ============================================================
-// Wczytaj wszystkie ustawienia z NVS
 void loadPrefs() {
     prefs.begin("switcher", false);
 
@@ -235,21 +223,18 @@ void loadPrefs() {
     Serial.println("NVS: Prefs loaded");
 }
 
-// Zapisz ostatnio wybrane wejście do NVS
 void saveLastInput(uint8_t input) {
     prefs.begin("switcher", false);
     prefs.putUChar("last_input", input);
     prefs.end();
 }
 
-// Zapisz jasność podświetlenia do NVS
 void saveBrightness(uint8_t val) {
     prefs.begin("switcher", false);
     prefs.putUChar("brightness", val);
     prefs.end();
 }
 
-// Zapisz ustawienia wyświetlacza (obrót, inwersja) do NVS
 void saveDisplaySettings() {
     prefs.begin("switcher", false);
     prefs.putBool("disp_invert", dispInvert);
@@ -257,7 +242,6 @@ void saveDisplaySettings() {
     prefs.end();
 }
 
-// Zapisz kody IR do NVS
 void saveIRCodes() {
     prefs.begin("switcher", false);
     prefs.putUInt("ir_source", irCodes[0]);
@@ -273,7 +257,6 @@ void saveIRCodes() {
     Serial.println("NVS: IR codes saved");
 }
 
-// Zapisz dane WiFi do NVS
 void saveWifiCreds(const String& ssid, const String& pass) {
     prefs.begin("switcher", false);
     prefs.putString("wifi_ssid", ssid);
@@ -282,7 +265,6 @@ void saveWifiCreds(const String& ssid, const String& pass) {
     Serial.println("NVS: WiFi saved");
 }
 
-// Zapisz ustawienia MQTT do NVS
 void saveMqttSettings() {
     prefs.begin("switcher", false);
     prefs.putString("mqtt_host",  mqttHost);
@@ -295,7 +277,6 @@ void saveMqttSettings() {
     Serial.println("NVS: MQTT saved");
 }
 
-// Zapisz maskę przekaźników do NVS
 void saveRelayEnabled() {
     prefs.begin("switcher", false);
     prefs.putBool("relay_en0", relayEnabled[0]);
@@ -307,7 +288,6 @@ void saveRelayEnabled() {
 }
 
 
-// Zapisz ustawienia audio do NVS
 void saveAudioSettings() {
     prefs.begin("switcher", false);
     prefs.putUChar("audio_vol",  audioVolume);
@@ -317,19 +297,17 @@ void saveAudioSettings() {
     Serial.println("NVS: Audio settings saved");
 }
 
+// ============================================================
+// DISPLAY - forward declarations
+// ============================================================
+void drawUI();
+void notifyAll(const String& msg);
+void setupMqtt();
+void mqttPublishAudio();
 
 // ============================================================
-// DISPLAY - deklaracje funkcji związanych z UI
+// RELAY CONTROL
 // ============================================================
-void drawUI();                    // Rysuje główny interfejs
-void notifyAll(const String& msg); // Wysyła wiadomość do wszystkich klientów WS
-void setupMqtt();                  // Konfiguruje klienta MQTT
-void mqttPublishAudio();           // Publikuje stan audio do MQTT
-
-// ============================================================
-// RELAY CONTROL - sterowanie przekaźnikami
-// ============================================================
-// Ustawia stany przekaźników na podstawie wybranego wejścia i maski relayEnabled
 void applyRelays(uint8_t input) {
     for(uint8_t i = 0; i < 4; i++) {
         // Relay(i) aktywny tylko gdy: aktywny jest Input(i) ORAZ ten relay jest włączony
@@ -341,7 +319,7 @@ void applyRelays(uint8_t input) {
 }
 
 // ============================================================
-// DISPLAY SETTINGS - stosuje ustawienia ekranu
+// DISPLAY SETTINGS
 // ============================================================
 void applyDisplaySettings() {
     tft.setRotation(dispRotate ? 3 : 1);
@@ -351,21 +329,25 @@ void applyDisplaySettings() {
 }
 
 // ============================================================
-// DISPLAY - rysowanie ikony z PROGMEM
+// DISPLAY - ikona z PROGMEM
 // ============================================================
 void drawIcon(int16_t x, int16_t y, const uint16_t* icon, uint16_t bg) {
-    uint16_t buf[ICON_W];
+
+    static uint16_t buf[ICON_W];
+
     for(int row = 0; row < ICON_H; row++) {
+
         for(int col = 0; col < ICON_W; col++) {
             uint16_t px = pgm_read_word(&icon[row * ICON_W + col]);
             buf[col] = (px == 0x0000) ? bg : px;
         }
-        tft.drawRGBBitmap(x, y + row, buf, ICON_W, 1);
+
+        tft.pushImage(x, y + row, ICON_W, 1, buf);
     }
 }
 
 // ============================================================
-// DISPLAY - rysowanie kafelka wejścia
+// DISPLAY - kafelek
 // ============================================================
 void drawTile(uint8_t index, bool active) {
     uint16_t x = TILE_MARGIN + index * (TILE_W + TILE_MARGIN);
@@ -386,22 +368,19 @@ void drawTile(uint8_t index, bool active) {
     drawIcon(iconX, iconY, INPUT_ICONS[index], COLOR_INACTIVE);
 }
 
-// Rysuje cały interfejs (wszystkie kafelki)
 void drawUI() {
     tft.fillScreen(COLOR_BG);
     for(uint8_t i = 0; i < 4; i++) drawTile(i, i == currentInput);
 }
 
-// Aktualizuje wyświetlanie po zmianie wejścia
 void updateInput(uint8_t oldInput, uint8_t newInput) {
     drawTile(oldInput, false);
     drawTile(newInput, true);
 }
 
 // ============================================================
-// DISPLAY - overlaye (paski, komunikaty)
+// DISPLAY - overlaye
 // ============================================================
-// Overlay z informacją o WiFi
 void showWifiOverlay(const String& line1, const String& line2, uint16_t color) {
     tft.fillRect(0, 0, SCREEN_W, 14, COLOR_BG);
     tft.setTextSize(1);
@@ -414,7 +393,6 @@ void showWifiOverlay(const String& line1, const String& line2, uint16_t color) {
     }
 }
 
-// Overlay z informacją o IR
 void showIROverlay(const String& msg) {
     tft.fillRect(0, 0, SCREEN_W, 14, COLOR_BG);
     tft.setTextSize(1);
@@ -423,19 +401,69 @@ void showIROverlay(const String& msg) {
     tft.print(msg);
 }
 
-// Overlay z postępem OTA
 void showOTAOverlay(int percent) {
-    tft.fillRect(0, 0, SCREEN_W, 14, COLOR_BG);
-    tft.setTextSize(1);
-    tft.setTextColor(COLOR_GREEN);
-    tft.setCursor(4, 3);
-    tft.print("OTA: " + String(percent) + "%");
-    // Pasek postępu
-    int barW = (SCREEN_W - 80) * percent / 100;
-    tft.fillRect(60, 4, barW, 6, COLOR_GREEN);
+    static int lastDrawn = -1;
+    static int lastPercent = -1;
+    
+    int barX = 60;
+    int barY = 4;
+    int barW = SCREEN_W - 80;
+    int barH = 10;  // Wyższy pasek
+    int fillW = barW * percent / 100;
+
+    if (lastDrawn == -1) {
+        // Pierwsze wywołanie: rysuj tło, napis, ramkę
+        tft.fillRect(0, 0, SCREEN_W, 16, COLOR_BG);
+        tft.setTextSize(1);
+        tft.setTextColor(COLOR_GREEN);
+        tft.setCursor(4, 4);
+        tft.print("OTA: " + String(percent) + "%");
+        
+        // Tło paska z zaokrąglonymi rogami (jak audio bar)
+        tft.fillRoundRect(barX, barY, barW, barH, 4, tft.color565(25,25,25));
+        tft.drawRoundRect(barX, barY, barW, barH, 4, COLOR_BORDER);
+        tft.fillRect(barX + 2, barY + 2, barW - 4, barH - 4, tft.color565(15,15,15));
+        
+        lastDrawn = 0;
+        lastPercent = -1;
+    }
+    
+    // Aktualizuj napis jeśli procent się zmienił
+    if(percent != lastPercent) {
+        tft.fillRect(4, 4, 50, 8, COLOR_BG);
+        tft.setCursor(4, 4);
+        tft.setTextColor(COLOR_GREEN);
+        tft.print("OTA: " + String(percent) + "%");
+        
+        // Czyść poprzednie wypełnienie
+        tft.fillRect(barX + 2, barY + 2, barW - 4, barH - 4, tft.color565(15,15,15));
+        
+        // Gradient + połysk (jak volume bar)
+        if(fillW > 4) {
+            for(int i = 0; i < fillW - 4; i++) {
+                int boost = (i * 40) / (fillW - 4);
+                
+                uint8_t r = ((COLOR_GREEN >> 11) & 0x1F) << 3;
+                uint8_t g = ((COLOR_GREEN >> 5) & 0x3F) << 2;
+                uint8_t b = (COLOR_GREEN & 0x1F) << 3;
+                
+                r = min(255, r + boost);
+                g = min(255, g + boost);
+                b = min(255, b + boost);
+                
+                uint16_t grad = tft.color565(r, g, b);
+                
+                tft.drawFastVLine(barX + 2 + i, barY + 2, barH - 4, grad);
+            }
+            
+            // Połysk na górze
+            tft.drawFastHLine(barX + 3, barY + 2, fillW - 6, tft.color565(255,255,255));
+        }
+        
+        lastPercent = percent;
+    }
 }
 
-// Czyści overlay (górny pasek)
 void clearOverlay() {
     tft.fillRect(0, 0, SCREEN_W, 14, COLOR_BG);
     for(uint8_t i = 0; i < 4; i++) {
@@ -451,13 +479,8 @@ void clearOverlay() {
 }
 
 // ============================================================
-// AUDIO OVERLAY - 3 paski z fokusem (bez migotania)
+// AUDIO GRADIENT COLORS
 // ============================================================
-
-// ============================================================
-// AUDIO GRADIENT COLORS - kolory pasków audio
-// ============================================================
-// Zwraca kolor paska głośności w zależności od poziomu
 uint16_t getVolumeColor(uint8_t volume) {
     // Volume: 0=max głośno, 63=mute cicho
     // Inwersja: 0-63 → 63-0
@@ -470,7 +493,6 @@ uint16_t getVolumeColor(uint8_t volume) {
     return COLOR_RED;                        // 71-100% = czerwony (głośno, niebezpieczne)
 }
 
-// Zwraca kolor paska bass/treble w zależności od wartości
 uint16_t getToneColor(int8_t value) {
     // Bass/Treble: -14 do +14
     if(value <= -5) return COLOR_CYAN;       // -14 do -5 = cyan (dużo cut)
@@ -478,137 +500,273 @@ uint16_t getToneColor(int8_t value) {
     return COLOR_GREEN;                      // -4 do +4 = zielony (neutralnie)
 }
 
-// Wymusza pełny redraw overlay audio przy następnym otwarciu
 void resetAudioOverlay() {
-    audioOverlayDrawn = false; 
+    audioOverlayDrawn = false;  // Wymusza pełny redraw przy następnym otwarciu
 }
 
-// Rysuje overlay audio (3 paski: volume, bass, treble)
+// ============================================================
+// AUDIO OVERLAY - sprite z gradientem
+// ============================================================
+
 void showAudioOverlay() {
     static uint8_t lastFocus = 255;
-    bool firstDraw = !audioOverlayDrawn || (lastFocus == 255);
+    static uint8_t lastVolume = 255;
+    static int8_t lastBass = 127;
+    static int8_t lastTreble = 127;
     
-    // Współrzędne 3 wierszy
+    bool focusChanged = (lastFocus != audioFocus);
+    bool valuesChanged = (lastVolume != audioVolume || lastBass != audioBass || lastTreble != audioTreble);
+    bool firstDraw = !audioOverlayDrawn || (lastFocus == 255);
+
     int y1 = 10, y2 = 32, y3 = 54;
     int arrowX = 4;
     int labelX = 16;
     int barX = 70;
-    int barW = SCREEN_W - barX - 40; 
+    int barW = SCREEN_W - barX - 40;
     int barH = 8;
-    
-    // Jeśli pierwszy raz lub zmiana fokusu → narysuj strukturę
-    if(firstDraw || lastFocus != audioFocus) {
-        tft.fillScreen(COLOR_BG);
-        tft.setTextSize(1);
-        
-        // Rysuj wszystkie etykiety i ramki
+    int centerX = barX + barW / 2;
+
+    // Pełny redraw gdy zmienia się focus lub pierwszy raz
+    if(firstDraw || focusChanged) {
+        audioSprite.fillSprite(COLOR_BG);
+        audioSprite.setTextSize(1);
+
         for(int i = 0; i < 3; i++) {
             int y = (i == 0) ? y1 : (i == 1) ? y2 : y3;
             bool focused = (i == audioFocus);
             uint16_t color = focused ? COLOR_GREEN : COLOR_GRAY;
-            
-            tft.setTextColor(color);
-            
-            // Strzałka fokusu
+
+            audioSprite.setTextColor(color);
+
             if(focused) {
-                tft.setCursor(arrowX, y);
-                tft.print(">");
+                audioSprite.setCursor(arrowX, y);
+                audioSprite.print(">");
             }
-            
-            // Etykieta
-            tft.setCursor(labelX, y);
-            if(i == 0) tft.print("VOLUME");
-            else if(i == 1) tft.print("BASS");
-            else tft.print("TREBLE");
-            
-            // Ramka paska
-            tft.drawRect(barX, y, barW, barH, color);
+
+            audioSprite.setCursor(labelX, y);
+            if(i == 0) audioSprite.print("VOLUME");
+            else if(i == 1) audioSprite.print("BASS");
+            else audioSprite.print("TREBLE");
+
+            // Tło barów z zaokrąglonymi rogami
+            audioSprite.fillRoundRect(barX, y, barW, barH, 4, audioSprite.color565(25,25,25));
+            audioSprite.drawRoundRect(barX, y, barW, barH, 4, focused ? COLOR_GREEN : COLOR_BORDER);
+            audioSprite.fillRect(barX + 2, y + 2, barW - 4, barH - 4, audioSprite.color565(15,15,15));
         }
-        
+
         lastFocus = audioFocus;
     }
-    
-    // Odśwież tylko wartości i wypełnienia pasków
-    int centerX = barX + barW / 2;
-    
-    // Volume - czyść obszar paska i wartość
-    tft.fillRect(barX + 1, y1 + 1, barW - 2, barH - 2, COLOR_BG);
-    tft.fillRect(SCREEN_W - 30, y1, 30, 8, COLOR_BG);  // Czyść wartość
-    
-    int level = 63 - audioVolume;
-    int percent = level * 100 / 63;
-    int fillW = (barW - 2) * level / 63;
-    uint16_t volColor = getVolumeColor(audioVolume);
-    if(fillW > 0) tft.fillRect(barX + 1, y1 + 1, fillW, barH - 2, audioFocus == 0 ? volColor : COLOR_GRAY);
-    
-    String volStr = String(percent) + "%";
-    tft.setTextColor(audioFocus == 0 ? volColor : COLOR_GRAY);
-    tft.setCursor(SCREEN_W - volStr.length() * 6 - 4, y1);
-    tft.print(volStr);
-    
-    // Bass - czyść obszar paska i wartość
-    tft.fillRect(barX + 1, y2 + 1, barW - 2, barH - 2, COLOR_BG);
-    tft.fillRect(SCREEN_W - 24, y2, 24, 8, COLOR_BG);
-    
-    uint16_t bassColor = getToneColor(audioBass);
-    if(audioBass > 0) {
-        int fillW2 = ((barW - 2) / 2) * audioBass / 14;
-        tft.fillRect(centerX, y2 + 1, fillW2, barH - 2, audioFocus == 1 ? bassColor : COLOR_GRAY);
-    } else if(audioBass < 0) {
-        int fillW2 = ((barW - 2) / 2) * (-audioBass) / 14;
-        tft.fillRect(centerX - fillW2, y2 + 1, fillW2, barH - 2, audioFocus == 1 ? bassColor : COLOR_GRAY);
+
+    // Aktualizuj wartości jeśli się zmieniły
+    if(valuesChanged || firstDraw || focusChanged) {
+        
+        // =====================================================
+        // ===================== VOLUME ========================
+        // =====================================================
+        
+        // Czyść obszar wartości
+        audioSprite.fillRect(barX + 2, y1 + 2, barW - 4, barH - 4, audioSprite.color565(15,15,15));
+        audioSprite.fillRect(SCREEN_W - 30, y1, 30, 8, COLOR_BG);
+        
+        int level = 63 - audioVolume;
+        int percent = level * 100 / 63;
+        int fillW = (barW - 4) * level / 63;
+        uint16_t volColor = getVolumeColor(audioVolume);
+        
+        // Gradient + połysk
+        if(fillW > 0) {
+            for(int i = 0; i < fillW; i++) {
+                int boost = (i * 40) / fillW;
+                
+                uint8_t r = ((volColor >> 11) & 0x1F) << 3;
+                uint8_t g = ((volColor >> 5) & 0x3F) << 2;
+                uint8_t b = (volColor & 0x1F) << 3;
+                
+                r = min(255, r + boost);
+                g = min(255, g + boost);
+                b = min(255, b + boost);
+                
+                uint16_t grad = audioSprite.color565(r, g, b);
+                
+                audioSprite.drawFastVLine(barX + 2 + i, y1 + 2, barH - 4,
+                                          audioFocus == 0 ? grad : COLOR_GRAY);
+            }
+            
+            // Połysk
+            audioSprite.drawFastHLine(barX + 3, y1 + 2, fillW - 2,
+                                      audioSprite.color565(255,255,255));
+        }
+        
+        // Wartość procentowa
+        String volStr = String(percent) + "%";
+        audioSprite.setTextColor(audioFocus == 0 ? volColor : COLOR_GRAY);
+        audioSprite.setCursor(SCREEN_W - volStr.length() * 6 - 4, y1);
+        audioSprite.print(volStr);
+        
+        // =====================================================
+        // ====================== BASS =========================
+        // =====================================================
+        
+        // Czyść obszar wartości
+        audioSprite.fillRect(barX + 2, y2 + 2, barW - 4, barH - 4, audioSprite.color565(15,15,15));
+        audioSprite.fillRect(SCREEN_W - 24, y2, 24, 8, COLOR_BG);
+        
+        uint16_t bassColor = getToneColor(audioBass);
+        
+        // Gradient dla Bass (od środka w prawo dla + lub w lewo dla -)
+        if(audioBass > 0) {
+            int fillW2 = ((barW - 4) / 2) * audioBass / 14;
+            
+            for(int i = 0; i < fillW2; i++) {
+                int boost = (i * 40) / fillW2;
+                
+                uint8_t r = ((bassColor >> 11) & 0x1F) << 3;
+                uint8_t g = ((bassColor >> 5) & 0x3F) << 2;
+                uint8_t b = (bassColor & 0x1F) << 3;
+                
+                r = min(255, r + boost);
+                g = min(255, g + boost);
+                b = min(255, b + boost);
+                
+                uint16_t grad = audioSprite.color565(r, g, b);
+                
+                audioSprite.drawFastVLine(centerX + i, y2 + 2, barH - 4,
+                                          audioFocus == 1 ? grad : COLOR_GRAY);
+            }
+            
+            // Połysk
+            if(fillW2 > 2) {
+                audioSprite.drawFastHLine(centerX + 1, y2 + 2, fillW2 - 2,
+                                          audioSprite.color565(255,255,255));
+            }
+        }
+        else if(audioBass < 0) {
+            int fillW2 = ((barW - 4) / 2) * (-audioBass) / 14;
+            
+            for(int i = 0; i < fillW2; i++) {
+                int boost = (i * 40) / fillW2;
+                
+                uint8_t r = ((bassColor >> 11) & 0x1F) << 3;
+                uint8_t g = ((bassColor >> 5) & 0x3F) << 2;
+                uint8_t b = (bassColor & 0x1F) << 3;
+                
+                r = min(255, r + boost);
+                g = min(255, g + boost);
+                b = min(255, b + boost);
+                
+                uint16_t grad = audioSprite.color565(r, g, b);
+                
+                audioSprite.drawFastVLine(centerX - i - 1, y2 + 2, barH - 4,
+                                          audioFocus == 1 ? grad : COLOR_GRAY);
+            }
+            
+            // Połysk
+            if(fillW2 > 2) {
+                audioSprite.drawFastHLine(centerX - fillW2 + 1, y2 + 2, fillW2 - 2,
+                                          audioSprite.color565(255,255,255));
+            }
+        }
+        
+        // Wartość dB
+        String bassStr = String(audioBass > 0 ? "+" : "") + String(audioBass);
+        audioSprite.setTextColor(audioFocus == 1 ? bassColor : COLOR_GRAY);
+        audioSprite.setCursor(SCREEN_W - bassStr.length() * 6 - 4, y2);
+        audioSprite.print(bassStr);
+        
+        // =====================================================
+        // ===================== TREBLE ========================
+        // =====================================================
+        
+        // Czyść obszar wartości
+        audioSprite.fillRect(barX + 2, y3 + 2, barW - 4, barH - 4, audioSprite.color565(15,15,15));
+        audioSprite.fillRect(SCREEN_W - 24, y3, 24, 8, COLOR_BG);
+        
+        uint16_t trebColor = getToneColor(audioTreble);
+        
+        // Gradient dla Treble (od środka w prawo dla + lub w lewo dla -)
+        if(audioTreble > 0) {
+            int fillW3 = ((barW - 4) / 2) * audioTreble / 14;
+            
+            for(int i = 0; i < fillW3; i++) {
+                int boost = (i * 40) / fillW3;
+                
+                uint8_t r = ((trebColor >> 11) & 0x1F) << 3;
+                uint8_t g = ((trebColor >> 5) & 0x3F) << 2;
+                uint8_t b = (trebColor & 0x1F) << 3;
+                
+                r = min(255, r + boost);
+                g = min(255, g + boost);
+                b = min(255, b + boost);
+                
+                uint16_t grad = audioSprite.color565(r, g, b);
+                
+                audioSprite.drawFastVLine(centerX + i, y3 + 2, barH - 4,
+                                          audioFocus == 2 ? grad : COLOR_GRAY);
+            }
+            
+            // Połysk
+            if(fillW3 > 2) {
+                audioSprite.drawFastHLine(centerX + 1, y3 + 2, fillW3 - 2,
+                                          audioSprite.color565(255,255,255));
+            }
+        }
+        else if(audioTreble < 0) {
+            int fillW3 = ((barW - 4) / 2) * (-audioTreble) / 14;
+            
+            for(int i = 0; i < fillW3; i++) {
+                int boost = (i * 40) / fillW3;
+                
+                uint8_t r = ((trebColor >> 11) & 0x1F) << 3;
+                uint8_t g = ((trebColor >> 5) & 0x3F) << 2;
+                uint8_t b = (trebColor & 0x1F) << 3;
+                
+                r = min(255, r + boost);
+                g = min(255, g + boost);
+                b = min(255, b + boost);
+                
+                uint16_t grad = audioSprite.color565(r, g, b);
+                
+                audioSprite.drawFastVLine(centerX - i - 1, y3 + 2, barH - 4,
+                                          audioFocus == 2 ? grad : COLOR_GRAY);
+            }
+            
+            // Połysk
+            if(fillW3 > 2) {
+                audioSprite.drawFastHLine(centerX - fillW3 + 1, y3 + 2, fillW3 - 2,
+                                          audioSprite.color565(255,255,255));
+            }
+        }
+        
+        // Wartość dB
+        String trebStr = String(audioTreble > 0 ? "+" : "") + String(audioTreble);
+        audioSprite.setTextColor(audioFocus == 2 ? trebColor : COLOR_GRAY);
+        audioSprite.setCursor(SCREEN_W - trebStr.length() * 6 - 4, y3);
+        audioSprite.print(trebStr);
+        
+        // Zapamiętaj wartości
+        lastVolume = audioVolume;
+        lastBass = audioBass;
+        lastTreble = audioTreble;
     }
     
-    String bassStr = String(audioBass > 0 ? "+" : "") + String(audioBass);
-    tft.setTextColor(audioFocus == 1 ? bassColor : COLOR_GRAY);
-    tft.setCursor(SCREEN_W - bassStr.length() * 6 - 4, y2);
-    tft.print(bassStr);
-    
-    // Treble - czyść obszar paska i wartość
-    tft.fillRect(barX + 1, y3 + 1, barW - 2, barH - 2, COLOR_BG);
-    tft.fillRect(SCREEN_W - 24, y3, 24, 8, COLOR_BG);
-    
-    uint16_t trebColor = getToneColor(audioTreble);
-    if(audioTreble > 0) {
-        int fillW3 = ((barW - 2) / 2) * audioTreble / 14;
-        tft.fillRect(centerX, y3 + 1, fillW3, barH - 2, audioFocus == 2 ? trebColor : COLOR_GRAY);
-    } else if(audioTreble < 0) {
-        int fillW3 = ((barW - 2) / 2) * (-audioTreble) / 14;
-        tft.fillRect(centerX - fillW3, y3 + 1, fillW3, barH - 2, audioFocus == 2 ? trebColor : COLOR_GRAY);
-    }
-    
-    String trebStr = String(audioTreble > 0 ? "+" : "") + String(audioTreble);
-    tft.setTextColor(audioFocus == 2 ? trebColor : COLOR_GRAY);
-    tft.setCursor(SCREEN_W - trebStr.length() * 6 - 4, y3);
-    tft.print(trebStr);
-    
-    audioOverlayDrawn = true;  // Struktura narysowana, kolejne wywołania tylko odświeżą paski
+    // Push sprite na ekran
+    audioSprite.pushSprite(0, 0);
+    audioOverlayDrawn = true;
 }
 
 
 
 
 // ============================================================
-// DISPLAY - splash screen (logo startowe)
+// DISPLAY - splash
 // ============================================================
 void showSplash() {
-    tft.startWrite();
-    tft.setAddrWindow(0, 0, LOGO_W, LOGO_H);
-    const uint16_t CHUNK = 64;
-    uint16_t buf[CHUNK];
-    uint32_t total = LOGO_W * LOGO_H;
-    for(uint32_t i = 0; i < total; i += CHUNK) {
-        uint16_t count = min((uint32_t)CHUNK, total - i);
-        for(uint16_t j = 0; j < count; j++)
-            buf[j] = pgm_read_word(&bootlogo[i + j]);
-        tft.writePixels(buf, count);
-    }
-    tft.endWrite();
+    tft.pushImage(0, 0, LOGO_W, LOGO_H, bootlogo);
     delay(2500);
 }
 
 // ============================================================
-// BACKLIGHT - ustawianie jasności podświetlenia
+// BACKLIGHT
 // ============================================================
 void setBrightness(uint8_t val) {
     brightness = val;
@@ -616,7 +774,7 @@ void setBrightness(uint8_t val) {
 }
 
 // ============================================================
-// AUDIO ADJUSTMENT - regulacja parametrów audio (volume, bass, treble)
+// AUDIO ADJUSTMENT
 // ============================================================
 void adjustAudio(int delta) {
     // Reguluje parametr wskazywany przez audioFocus
@@ -667,7 +825,6 @@ void adjustAudio(int delta) {
     showAudioOverlay();
 }
 
-// Zmiana fokusu (volume/bass/treble) w overlay audio
 void changeFocus(int delta) {
     audioFocus = (audioFocus + delta + 3) % 3;  // 0-2 z wraparound
     resetAudioOverlay();  // Zmiana fokusu - wymaga pełnego redraw
@@ -678,7 +835,7 @@ void changeFocus(int delta) {
 }
 
 // ============================================================
-// AUDIO - inicjalizacja układu audio PT2314E
+// AUDIO
 // ============================================================
 void initAudio(uint8_t input) {
     audio.setVolume(audioVolume);
@@ -690,9 +847,8 @@ void initAudio(uint8_t input) {
 }
 
 // ============================================================
-// MQTT - publish - publikowanie stanu do MQTT
+// MQTT - publish
 // ============================================================
-// Publikuje aktualny input do MQTT
 void mqttPublishInput(uint8_t input) {
     if(!mqttConnected) return;
     String topic = mqttTopic + "/state";
@@ -701,14 +857,12 @@ void mqttPublishInput(uint8_t input) {
     Serial.printf("MQTT pub: %s = %s\n", topic.c_str(), payload.c_str());
 }
 
-// Publikuje status (online/offline) do MQTT
 void mqttPublishStatus(const char* status) {
     if(!mqttConnected) return;
     String topic = mqttTopic + "/status";
     mqttClient.publish(topic.c_str(), 0, true, status);
 }
 
-// Publikuje stan audio (volume, bass, treble) do MQTT
 void mqttPublishAudio() {
     if(!mqttConnected) return;
     
@@ -732,7 +886,7 @@ void mqttPublishAudio() {
 }
 
 // ============================================================
-// INPUT SWITCH - zmiana wejścia audio
+// INPUT SWITCH
 // ============================================================
 void switchInput(uint8_t newInput) {
     if(newInput > 3) return;
@@ -747,7 +901,7 @@ void switchInput(uint8_t newInput) {
 }
 
 // ============================================================
-// WEBSOCKET - budowanie statusu JSON dla frontendu
+// WEBSOCKET - status JSON
 // ============================================================
 String buildStatusJSON() {
     String json = "{\"type\":\"status\"";
@@ -787,13 +941,12 @@ String buildStatusJSON() {
     return json;
 }
 
-// Wysyła wiadomość do wszystkich klientów WebSocket
 void notifyAll(const String& msg) {
     ws.textAll(msg);
 }
 
 // ============================================================
-// WEBSOCKET - obsługa wiadomości od klienta (JSON)
+// WEBSOCKET - obsługa wiadomości
 // ============================================================
 void handleWSMessage(AsyncWebSocketClient* client, const String& data) {
     Serial.println("WS: " + data);
@@ -1022,7 +1175,7 @@ void handleWSMessage(AsyncWebSocketClient* client, const String& data) {
 }
 
 // ============================================================
-// WEBSOCKET - event handler (połączenie, rozłączenie, dane)
+// WEBSOCKET - event handler
 // ============================================================
 void onWSEvent(AsyncWebSocket* server, AsyncWebSocketClient* client,
                AwsEventType type, void* arg, uint8_t* data, size_t len) {
@@ -1041,9 +1194,8 @@ void onWSEvent(AsyncWebSocket* server, AsyncWebSocketClient* client,
 }
 
 // ============================================================
-// MQTT - callbacks (połączenie, rozłączenie, wiadomości)
+// MQTT - callbacks
 // ============================================================
-// Callback zdarzeń WiFi (połączenie/rozłączenie)
 void WiFiEvent(WiFiEvent_t event) {
     switch(event) {
         case SYSTEM_EVENT_STA_GOT_IP:
@@ -1060,7 +1212,6 @@ void WiFiEvent(WiFiEvent_t event) {
     }
 }
 
-// Callback po połączeniu z MQTT
 void onMqttConnect(bool sessionPresent) {
     mqttConnected = true;
     Serial.println("MQTT: Connected");
@@ -1085,7 +1236,6 @@ void onMqttConnect(bool sessionPresent) {
     notifyAll("{\"type\":\"mqtt_connected\"}");
 }
 
-// Callback po rozłączeniu z MQTT
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
     mqttConnected = false;
     
@@ -1111,7 +1261,6 @@ void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
     notifyAll("{\"type\":\"mqtt_disconnected\"}");
 }
 
-// Callback po odebraniu wiadomości MQTT
 void onMqttMessage(char* topic, char* payload,
                    AsyncMqttClientMessageProperties properties,
                    size_t len, size_t index, size_t total) {
@@ -1172,7 +1321,7 @@ void onMqttMessage(char* topic, char* payload,
 }
 
 // ============================================================
-// MQTT - konfiguracja klienta MQTT
+// MQTT - setup i reconnect
 // ============================================================
 void setupMqtt() {
     if(mqttHost.length() == 0 || !mqttEnabled) return;
@@ -1196,7 +1345,6 @@ void setupMqtt() {
     Serial.printf("MQTT: Configured for %s:%d\n", mqttHost.c_str(), mqttPort);
 }
 
-// Próba ponownego połączenia z MQTT jeśli potrzeba
 void mqttReconnectIfNeeded() {
     if(!mqttEnabled || mqttHost.length() == 0) return;
     if(mqttConnected) return;
@@ -1211,7 +1359,7 @@ void mqttReconnectIfNeeded() {
 }
 
 // ============================================================
-// OTA - konfiguracja endpointu OTA
+// OTA - setup
 // ============================================================
 void setupOTA() {
     // Endpoint odbioru pliku .bin
@@ -1219,11 +1367,22 @@ void setupOTA() {
         // Odpowiedź po zakończeniu
         [](AsyncWebServerRequest* req) {
             bool success = !Update.hasError();
+            
+            if(success) {
+                Serial.println("OTA: Update SUCCESS!");
+                Serial.printf("OTA: New firmware will boot on next restart\n");
+            } else {
+                Serial.println("OTA: Update FAILED!");
+                Update.printError(Serial);
+            }
+            
             String msg = success ? "{\"type\":\"ota_ok\"}" : "{\"type\":\"ota_fail\"}";
             notifyAll(msg);
             req->send(200, "application/json", success ? "{\"ok\":true}" : "{\"ok\":false}");
+            
             if(success) {
-                delay(1000);
+                Serial.println("OTA: Restarting in 2 seconds...");
+                delay(2000);
                 ESP.restart();
             }
         },
@@ -1234,26 +1393,68 @@ void setupOTA() {
             if(index == 0) {
                 Serial.printf("OTA: Start - %s\n", filename.c_str());
                 otaInProgress = true;
-                if(!Update.begin(UPDATE_SIZE_UNKNOWN)) {
+                
+                // Pokaż aktualną partycję
+                const esp_partition_t* running = esp_ota_get_running_partition();
+                const esp_partition_t* target = esp_ota_get_next_update_partition(NULL);
+                
+                Serial.printf("OTA: Running from: %s (0x%x)\n", running->label, running->address);
+                Serial.printf("OTA: Will update: %s (0x%x)\n", target->label, target->address);
+                
+                // Użyj konkretnego rozmiaru zamiast UPDATE_SIZE_UNKNOWN
+                size_t updateSize = req->contentLength();
+                Serial.printf("OTA: Size = %u bytes\n", updateSize);
+                
+                // Begin update - automatycznie wykryje typ partycji
+                if(!Update.begin(updateSize)) {
                     Update.printError(Serial);
+                    Serial.println("OTA: Update.begin() failed!");
+                    return;
                 }
+                
+                Serial.println("OTA: Update.begin() OK - receiving data...");
             }
 
             if(Update.write(data, len) != len) {
                 Update.printError(Serial);
             }
 
-            // Progress
+            // Progress - ograniczaj powiadomienia do co 5%
             if(Update.size() > 0) {
                 int percent = (index + len) * 100 / req->contentLength();
                 showOTAOverlay(percent);
-                notifyAll("{\"type\":\"ota_progress\",\"percent\":" + String(percent) + "}");
+                static int lastPercent = -10; // -10 by zawsze wysłać pierwsze
+                if (percent / 5 != lastPercent / 5) { // tylko co 5%
+                    notifyAll("{\"type\":\"ota_progress\",\"percent\":" + String(percent) + "}");
+                    lastPercent = percent;
+                }
             }
 
             if(final) {
                 if(Update.end(true)) {
-                    Serial.printf("OTA: Done - %u bytes\n", index + len);
+                    Serial.printf("OTA: Done - %u bytes written\n", index + len);
+                    Serial.printf("OTA: MD5: %s\n", Update.md5String().c_str());
+                    
+                    // Sprawdź czy zapisano do właściwej partycji
+                    if(Update.hasError()) {
+                        Serial.println("OTA: Verification FAILED!");
+                        Update.printError(Serial);
+                    } else {
+                        Serial.println("OTA: Verification OK!");
+                        
+                        // WAŻNE: Ustaw nową partycję jako bootującą
+                        const esp_partition_t* update_partition = esp_ota_get_next_update_partition(NULL);
+                        if(update_partition != NULL) {
+                            esp_err_t err = esp_ota_set_boot_partition(update_partition);
+                            if(err == ESP_OK) {
+                                Serial.printf("OTA: Set boot partition to %s\n", update_partition->label);
+                            } else {
+                                Serial.printf("OTA: Failed to set boot partition! Error: 0x%x\n", err);
+                            }
+                        }
+                    }
                 } else {
+                    Serial.println("OTA: Update.end() FAILED!");
                     Update.printError(Serial);
                 }
                 otaInProgress = false;
@@ -1263,7 +1464,7 @@ void setupOTA() {
 }
 
 // ============================================================
-// WIFI SETUP - konfiguracja WiFi (AP/STA)
+// WIFI SETUP
 // ============================================================
 void setupWifi() {
     // Register WiFi event handler PRZED WiFi.begin()
@@ -1298,7 +1499,7 @@ void setupWifi() {
 }
 
 // ============================================================
-// SERVER SETUP - konfiguracja serwera HTTP/WebSocket/OTA
+// SERVER SETUP
 // ============================================================
 void setupServer() {
     ws.onEvent(onWSEvent);
@@ -1312,7 +1513,7 @@ void setupServer() {
 }
 
 // ============================================================
-// IR - obsługa odebranego kodu IR
+// IR
 // ============================================================
 void handleIR(uint32_t code) {
     if(learningIR) {
@@ -1332,6 +1533,20 @@ void handleIR(uint32_t code) {
         notifyAll(msg);
         return;
     }
+
+    // Sprawdź czy to kod który wspiera auto-repeat (Vol+/Vol-/↑/↓)
+    bool isRepeatableCode = (code == irCodes[5] || code == irCodes[6] || 
+                             code == irCodes[7] || code == irCodes[8]) && code != 0;
+    
+    // Jeśli to ten sam kod - oznacz jako repeating
+    if(code == lastIRCode && isRepeatableCode) {
+        irRepeating = true;
+    } else {
+        irRepeating = false;
+    }
+    
+    lastIRCode = code;
+    lastIRTime = millis();
 
     if(code == irCodes[0] && irCodes[0] != 0) {
         switchInput((currentInput + 1) % 4);
@@ -1364,14 +1579,30 @@ void handleIR(uint32_t code) {
 }
 
 // ============================================================
-// SETUP - główna inicjalizacja systemu
+// SETUP
 // ============================================================
 void setup() {
     Serial.begin(115200);
     delay(1000);
     Serial.println("\n╔═══════════════════════════════════════╗");
-    Serial.println("║      AUDIO SWITCHER v4.1              ║");
+    Serial.println("║      AUDIO SWITCHER v4.2              ║");
     Serial.println("╚═══════════════════════════════════════╝\n");
+    
+    // Informacje o partycjach OTA
+    Serial.printf("Sketch size: %u / %u bytes\n", ESP.getSketchSize(), ESP.getFreeSketchSpace());
+    Serial.printf("Free heap: %u bytes\n", ESP.getFreeHeap());
+    
+    const esp_partition_t* running = esp_ota_get_running_partition();
+    if(running) {
+        Serial.printf("Running partition: %s (0x%x, %u bytes)\n", 
+                      running->label, running->address, running->size);
+    }
+    
+    const esp_partition_t* next = esp_ota_get_next_update_partition(NULL);
+    if(next) {
+        Serial.printf("Next OTA partition: %s (0x%x, %u bytes)\n\n", 
+                      next->label, next->address, next->size);
+    }
 
     // Backlight PWM
     ledcSetup(BL_CHANNEL, BL_FREQ, BL_RES);
@@ -1385,11 +1616,15 @@ void setup() {
     }
 
     // Display
-    tft.init(SCREEN_H, SCREEN_W);
-    tft.setRotation(1);
+    tft.init();
+    tft.setSwapBytes(true);   // WAŻNE dla RGB565 z PROGMEM
+    tft.setRotation(3);
     tft.invertDisplay(false);
     tft.fillScreen(COLOR_BG);
     showSplash();
+
+    audioSprite.setColorDepth(16);
+    audioSprite.createSprite(SCREEN_W, SCREEN_H);
 
     // NVS
     loadPrefs();
@@ -1404,8 +1639,10 @@ void setup() {
     delay(200);
     initAudio(currentInput);
 
-    // IR
+    // IR - włącz wszystkie protokoły z większą tolerancją
+    irrecv.setTolerance(30);  // Domyślnie 25%, zwiększ do 30%
     irrecv.enableIRIn();
+    Serial.println("IR: Receiver enabled - RC6 tolerance increased to 30%");
 
     // UI
     drawUI();
@@ -1431,7 +1668,7 @@ void setup() {
 }
 
 // ============================================================
-// LOOP - główna pętla programu
+// LOOP
 // ============================================================
 void loop() {
     // Audio overlay timeout - powrót do kafelków po 2s
@@ -1453,12 +1690,85 @@ void loop() {
     if(!otaInProgress && irrecv.decode(&results)) {
         unsigned long now = millis();
         if(now - lastIR > IR_DEBOUNCE) {
-            if(results.value != 0xFFFFFFFF && results.value != 0) {
-                handleIR(results.value);
+            
+            uint32_t irCode = 0;
+            
+            // RC6: Użyj hashu z PEŁNEGO sygnału (gdzie są dane przycisku)
+            if(results.decode_type == RC6 && results.rawlen >= 20) {
+                // Hash z CAŁEGO sygnału - każda wartość ma znaczenie!
+                uint32_t hash = 0;
+                
+                // Użyj wszystkich wartości od 5 do końca
+                for(int i = 5; i < results.rawlen && i < 60; i++) {
+                    // Zaokrąglij do 100us - kompromis między stabilnością a unikalnością
+                    uint16_t val = (results.rawbuf[i] / 100) * 100;
+                    hash = (hash * 31 + val) & 0xFFFFFFFF;
+                }
+                irCode = hash;
+                
+                Serial.println("=== IR RECEIVED (RC6) ===");
+                Serial.printf("Raw length: %d\n", results.rawlen);
+                Serial.printf("Full hash: 0x%08X\n", hash);
+                
+                // DEBUG: Pokaż WSZYSTKIE raw values (gdzie są dane przycisku!)
+                Serial.print("Full raw: ");
+                for(int i = 5; i < min((int)results.rawlen, 60); i++) {
+                    Serial.printf("%d ", results.rawbuf[i]);
+                    if((i - 5) % 15 == 14) Serial.println();
+                }
+                Serial.println();
+                Serial.println("===================");
+            } else {
+                // Inne protokoły - użyj decoded value
+                irCode = results.value;
+                
+                Serial.println("=== IR RECEIVED ===");
+                Serial.printf("Protocol: %s\n", typeToString(results.decode_type).c_str());
+                Serial.printf("Value: 0x%08X\n", results.value);
+                Serial.printf("Bits: %d\n", results.bits);
+                Serial.println("===================");
+            }
+            
+            // Ignoruj repeat codes i puste
+            if(irCode != 0xFFFFFFFF && irCode != 0 && irCode != 0x00000003) {
+                handleIR(irCode);
                 lastIR = now;
             }
         }
         irrecv.resume();
+    }
+    
+    // IR Auto-repeat dla Vol+/Vol-/↑/↓
+    if(irRepeating && lastIRCode != 0) {
+        unsigned long now = millis();
+        unsigned long timeSincePress = now - lastIRTime;
+        
+        // Po 500ms zaczynam auto-repeat co 150ms
+        if(timeSincePress > IR_REPEAT_DELAY) {
+            static unsigned long lastRepeat = 0;
+            if(now - lastRepeat > IR_REPEAT_RATE) {
+                // Powtórz akcję
+                if(lastIRCode == irCodes[5]) {
+                    adjustAudio(-1);  // Vol+
+                }
+                else if(lastIRCode == irCodes[6]) {
+                    adjustAudio(+1);  // Vol-
+                }
+                else if(lastIRCode == irCodes[7]) {
+                    changeFocus(-1);  // ↑
+                }
+                else if(lastIRCode == irCodes[8]) {
+                    changeFocus(+1);  // ↓
+                }
+                lastRepeat = now;
+            }
+        }
+    } else {
+        // Reset gdy przycisk puszczony (brak sygnału przez >500ms)
+        if(millis() - lastIRTime > 500) {
+            irRepeating = false;
+            lastIRCode = 0;
+        }
     }
 
     // MQTT reconnect only
