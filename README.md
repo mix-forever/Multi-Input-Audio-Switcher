@@ -1,6 +1,8 @@
-# 🎛️ Audio Switcher v4.2
+# 🎛️ MultiAMP v4.2
 
-**Professional 4-channel audio switcher with PT2314E processor, LCD display, IR remote with auto-repeat and full IoT integration**
+**Professional 4-channel audio amplifier with PT2314E processor, LCD display, IR remote and full IoT integration**
+
+> Previously known as "Audio Switcher". Renamed to reflect the amplifier functionality.
 
 ![ESP32](https://img.shields.io/badge/ESP32-WROOM--32U-blue)
 ![PlatformIO](https://img.shields.io/badge/PlatformIO-compatible-orange)
@@ -13,6 +15,7 @@
 
 - [Features](#-features)
 - [Hardware](#-hardware)
+- [Project Structure](#-project-structure)
 - [Installation](#-installation)
 - [⚠️ TFT_eSPI Configuration](#-tft_espi-configuration)
 - [Web Interface](#-web-interface)
@@ -21,7 +24,7 @@
 - [Configuration](#-configuration)
 - [Troubleshooting](#-troubleshooting)
 - [Technical Specifications](#-technical-specifications)
-- [Changelog v4.2](#-changelog-v42)
+- [Changelog](#-changelog)
 - [License](#-license)
 
 ---
@@ -31,27 +34,29 @@
 ### Audio Processing
 - **4 audio inputs** with seamless switching
 - **PT2314E audio processor**:
-  - Volume control (0-63, 0.25dB steps)
-  - Bass control (-14 to +14 dB)
-  - Treble control (-14 to +14 dB)
+  - Volume control (0-56 user scale; PT2314 library inverts to hardware command)
+  - Bass control (-14 to +14 dB, 2 dB steps)
+  - Treble control (-14 to +14 dB, 2 dB steps)
 - **SSR relay control** (4 channels)
-- **NVS persistence** - all settings survive restart
+- **NVS persistence** — all settings survive restart
+- **Deferred audio save** — protects flash from wear during rapid adjustments
 
 ### Display and Control
 - **ST7789 LCD Display** (284x76) with Material Design
-- **Sprite rendering** - smooth animations without flicker
+- **Sprite rendering** — smooth animations without flicker
 - **Audio overlay** with gradients and gloss:
   - Volume: Green→Yellow→Red
   - Bass/Treble: Cyan→Green→Orange
   - White gloss on all bars
-- **IR remote learning** - universal recognition (NEC, RC6, Samsung, Sony, LG)
-- **Auto-repeat** for Vol+/Vol-/↑/↓ - hold for continuous adjustment
+- **IR remote learning** — universal recognition (NEC, RC6, Samsung, Sony, LG)
+- **Volume step +3** per button press — fast adjustment without repeat
 
 ### Connectivity
-- **Dual WiFi** (AP + STA)
-- **WebSocket** - real-time synchronization
-- **MQTT** - full bidirectional control
-- **OTA** - firmware updates via WebUI
+- **WiFi STA mode** — connects to your home network
+- **WiFi AP fallback** — configuration mode when STA fails
+- **WebSocket** — real-time synchronization with JSON parsing and command validation
+- **MQTT** — full bidirectional control with unique MAC-based ClientId
+- **OTA** — firmware updates via WebUI with Basic Auth
 - **Home Assistant ready** 🏠
 
 ---
@@ -70,6 +75,27 @@
 
 ---
 
+## 📁 Project Structure
+
+```
+src/
+├── main.cpp              # setup(), loop() — main loop
+├── config.h              # Pins, colors, layouts, timeouts
+├── globals.h / globals.cpp # Global variable declarations and helpers
+├── storage.cpp           # NVS — loadPrefs, save*, deferred audio save
+├── ui.cpp                # Full TFT UI — tiles, overlays, splash, OTA screen
+├── audio_ctrl.cpp        # Audio, relay, input switch
+├── network.cpp           # WebSocket, OTA, MQTT, WiFi, HTTP server
+├── PT2314.h / PT2314.cpp # PT2314E library (I2C)
+├── web.h                 # Web interface (PROGMEM)
+├── icons.h               # Input icons
+└── logo.h                # Startup logo
+```
+
+> **Note:** Code was previously in a single `main.cpp` (~2200 lines). It has been split into modules for better maintainability.
+
+---
+
 ## 📦 Installation
 
 ### Quick Start
@@ -77,8 +103,6 @@
 ```bash
 git clone https://github.com/yourusername/audio-switcher.git
 cd audio-switcher
-pio lib install
-# IMPORTANT: Configure TFT_eSPI (see below!)
 pio run --target upload
 ```
 
@@ -86,23 +110,33 @@ pio run --target upload
 
 ```ini
 [env:esp32-wroom-32]
-platform = espressif32
+platform = platformio/espressif32@6.12.0
 board = esp32dev
 framework = arduino
 board_build.partitions = min_spiffs.csv
 
+monitor_speed = 115200
+monitor_filters = esp32_exception_decoder
+
 lib_deps =
-    bodmer/TFT_eSPI@^2.5.43
-    crankyoldgit/IRremoteESP8266@^2.8.6
-    esphome/ESPAsyncWebServer-esphome@^3.1.0
+    https://github.com/crankyoldgit/IRremoteESP8266.git
+    esphome/ESPAsyncWebServer-esphome@3.1.0
     https://github.com/OttoWinter/async-mqtt-client.git
+    Bodmer/TFT_eSPI
+
+build_flags =
+    -D CORE_DEBUG_LEVEL=0
+    -D CONFIG_ASYNC_TCP_RUNNING_CORE=1
+    -D DECODE_RC6=1
 ```
+
+> **TFT_eSPI configuration required** — see section below!
 
 ---
 
 ## ⚠️ TFT_eSPI Configuration
 
-### CRITICAL - Manual Configuration Required!
+### CRITICAL — Manual Configuration Required!
 
 The ST7789 284x76 display requires **3 modifications** to the TFT_eSPI library.
 
@@ -117,168 +151,149 @@ The ST7789 284x76 display requires **3 modifications** to the TFT_eSPI library.
 
 **File:** `User_Setup.h`
 
-**1. Uncomment driver:**
+**Add these lines (comment out other display definitions):**
 ```cpp
 #define ST7789_DRIVER
-```
+#define TFT_WIDTH  284
+#define TFT_HEIGHT 76
+#define CGRAM_OFFSET
 
-**2. Set resolution:**
-```cpp
-#define TFT_WIDTH  76
-#define TFT_HEIGHT 284
+#define TFT_MOSI 23
+#define TFT_SCLK 18
+#define TFT_CS   5
+#define TFT_DC   17
+#define TFT_RST  16
+#define TFT_BL   15
+
+#define LOAD_GLCD
+#define LOAD_FONT2
+#define LOAD_FONT4
+#define LOAD_FONT6
+#define LOAD_FONT7
+#define LOAD_FONT8
+#define LOAD_GFXFF
+#define SMOOTH_FONT
+
+#define SPI_FREQUENCY  40000000
 ```
 
 ---
 
-### Modification 2: ST7789_Defines.h (OFFSET)
+### Modification 2: TFT_eSPI.cpp — setRotation()
 
-**File:** `TFT_Drivers/ST7789_Defines.h`
+**File:** `TFT_eSPI.cpp`
 
-**Add at the end of file:**
+**Find `setRotation()` and add at the end:**
 ```cpp
-// ALI ST7789P3 2.25 TFT support (always use offset)
-#if (TFT_HEIGHT == 284) && (TFT_WIDTH == 76)
-  #ifndef CGRAM_OFFSET
-    #define CGRAM_OFFSET
-  #endif
-#endif
-```
-
-**Why:** This display requires automatic offset for correct pixel addressing.
-
----
-
-### Modification 3: ST7789_Rotation.h (CUSTOM OFFSETS)
-
-**File:** `TFT_Drivers/ST7789_Rotation.h`
-
-**Find the `switch(rotation)` section and add to case 1 and case 3:**
-
-```cpp
-switch (rotation) {
-  case 0: // Portrait
-    // ... existing code ...
-    break;
-
-  case 1: // Landscape (Portrait + 90)
+void TFT_eSPI::setRotation(uint8_t m) {
     // ... existing code ...
     
-    // ADD THIS:
-    else if (_init_width == 76)
-    {
-      colstart = 18;
-      rowstart = 82;
+    // ST7789 284x76 OFFSET FIX
+    if (_init_width == 284 && _init_height == 76) {
+        if (m == 1 || m == 3) {
+            _addr_row_offset = 26;
+            _addr_col_offset = 0;
+        } else {
+            _addr_row_offset = 0;
+            _addr_col_offset = 26;
+        }
     }
-    break;
-
-  case 2: // Inverted portrait
-    // ... existing code ...
-    break;
-
-  case 3: // Inverted landscape
-    // ... existing code ...
-    
-    // ADD THIS:
-    else if (_init_width == 76)
-    {
-      colstart = 18;
-      rowstart = 82;
-    }
-    break;
 }
 ```
 
-**Why:** These offsets (18, 82) align the image on the physical 76x284 display.
-
 ---
 
-### Verification in Project
+### Modification 3: TFT_eSPI.cpp — writecommand()
 
-**In `main.cpp`:**
+**File:** `TFT_eSPI.cpp`
+
+**Find `writecommand()` and add:**
 ```cpp
-tft.init();
-tft.setSwapBytes(true);   // IMPORTANT for RGB565!
-tft.setRotation(3);       // Uses case 3 with offsets
+void TFT_eSPI::writecommand(uint8_t c) {
+    // ... existing code ...
+    
+    // ST7789 284x76 INIT SEQUENCE
+    if (c == 0x11 && _init_width == 284) {
+        delay(120);
+        writecommand(0x36); writedata(0x00);
+        writecommand(0x3A); writedata(0x55);
+        writecommand(0xB2); writedata(0x0C); writedata(0x0C);
+        writecommand(0xB7); writedata(0x35);
+        writecommand(0xBB); writedata(0x1A);
+        writecommand(0xC0); writedata(0x2C);
+        writecommand(0xC2); writedata(0x01);
+        writecommand(0xC3); writedata(0x0B);
+        writecommand(0xC4); writedata(0x20);
+        writecommand(0xC6); writedata(0x0F);
+        writecommand(0xD0); writedata(0xA4); writedata(0xA1);
+        writecommand(0xE0); 
+        for (int i=0; i<14; i++) writedata(0x00);
+        writecommand(0xE1);
+        for (int i=0; i<14; i++) writedata(0x00);
+        writecommand(0x21);
+        writecommand(0x11);
+        delay(120);
+        writecommand(0x29);
+        delay(120);
+    }
+}
 ```
-
----
-
-### ⚠️ Library Update Warning
-
-**Problem:** Updating `TFT_eSPI` will overwrite these changes!
-
-**Solutions:**
-1. **Document these changes** (keep in project README)
-2. **After update** reapply modifications
-3. **Or:** Lock library version in `platformio.ini`:
-   ```ini
-   bodmer/TFT_eSPI@2.5.43  # Locked version
-   ```
-
----
-
-### 🔗 Sources and Credits
-
-- **ua6em** - discovered offsets for this display
-- **Arduino Forum:** [ST7789P3 2.25" Setup](https://forum.arduino.cc/t/tft-espi-setup-for-st7789p3-2-25-76x284-tft/1407473/14)
-- **TFT_eSPI GitHub:** [bodmer/TFT_eSPI](https://github.com/Bodmer/TFT_eSPI)
 
 ---
 
 ## 🌐 Web Interface
 
-### Access
-- **AP:** http://192.168.4.1 (SSID: AudioSwitcher, password: audio1234)
-- **STA:** http://[device-ip]
+### Sections
 
-### Features
-- 🎵 **4 input tiles** with depth effect
-- 🎚️ **Audio sliders** with gradients (Volume, Bass, Treble)
-- 🔌 **Relays** - toggle for each input
-- 📡 **IR learning** - all protocols
-- 📶 **WiFi configuration** with connection test
-- 🔗 **MQTT** - broker, auth, prefix
-- 🔄 **OTA** - drag & drop firmware with progressbar
+| Section | Description |
+|---------|-------------|
+| **Dashboard** | 4 input tiles with integrated relay toggles |
+| **Audio** | Volume, Bass, Treble sliders (always visible) |
+| **Settings Tab** | Display (brightness, invert, rotate) + IR codes |
+| **Network Tab** | WiFi config + MQTT setup |
+| **System Tab** | Security (admin password), OTA, System Logs |
+
+**Layout:** Dashboard + Audio sliders at top, everything else organized in 3 tabs below.
+
+### System Logs Controls
+
+- **Enable logging** toggle — show/hide logs
+- **Refresh** button — manual refresh
+- **Clear** button — clear log buffer
+- **Auto-refresh** checkbox — automatic updates
+- **Interval** field — set refresh rate (1-30 seconds)
 
 ---
 
 ## 📡 MQTT API
 
-### Subscribed Topics (Commands)
+### Topics
 
-```bash
-# Switch input (1-4)
-mosquitto_pub -t audio_switcher/set -m "2"
+```
+audio_switcher/status      → "online" / "offline" (LWT)
+audio_switcher/input       → 0-3
+audio_switcher/volume      → 0-56
+audio_switcher/bass        → -14 to +14
+audio_switcher/treble      → -14 to +14
 
-# Set volume (0-100%)
-mosquitto_pub -t audio_switcher/volume/set -m "75"
-
-# Set bass (-14 to +14 dB)
-mosquitto_pub -t audio_switcher/bass/set -m "5"
-
-# Set treble (-14 to +14 dB)
-mosquitto_pub -t audio_switcher/treble/set -m "-3"
+audio_switcher/set         → input: 0-3
+audio_switcher/volume/set  → 0-56
+audio_switcher/bass/set    → -14 to +14
+audio_switcher/treble/set  → -14 to +14
 ```
 
-### Published Topics (Status)
+### Home Assistant Example
 
 ```yaml
-audio_switcher/status:  "online"/"offline" (LWT, retained)
-audio_switcher/state:   1-4 (retained)
-audio_switcher/audio:   {"volume":75,"volume_raw":15,"bass":5,"treble":-2}
-```
-
-### Home Assistant Integration
-
-```yaml
-mqtt:
-  number:
-    - name: "Audio Volume"
-      command_topic: "audio_switcher/volume/set"
-      state_topic: "audio_switcher/audio"
-      value_template: "{{ value_json.volume }}"
-      min: 0
-      max: 100
+switch:
+  - platform: mqtt
+    name: "Audio Input 1"
+    state_topic: "audio_switcher/input"
+    command_topic: "audio_switcher/set"
+    payload_on: '{"input":0}'
+    payload_off: '{"input":0}'
+    state_on: "0"
+    state_off: "1"
 ```
 
 ---
@@ -286,22 +301,27 @@ mqtt:
 ## 🎮 IR Remote
 
 ### Supported Protocols
-✅ NEC, RC6, Samsung, Sony, RC5, LG, Panasonic  
-✅ **RC6 Mode 6** - hash-based matching (ignores toggle bit)  
-✅ **Auto-repeat** for Vol+/Vol-/↑/↓
 
-### Functions
+| Protocol | Status | Notes |
+|----------|--------|-------|
+| NEC | ✅ Full | Standard codes |
+| RC6 | ✅ Full | Hash-based (toggle bit handling) |
+| Samsung | ✅ Full | 32-bit |
+| Sony | ✅ Full | 12/15/20-bit |
+| LG | ✅ Full | 28-bit |
 
-| Button | Action | Auto-Repeat |
-|--------|--------|-------------|
-| Source | Switch inputs (1→2→3→4) | ❌ |
-| Input 1-4 | Direct selection | ❌ |
-| Vol+ | Increase parameter | ✅ 500ms + 150ms |
-| Vol- | Decrease parameter | ✅ 500ms + 150ms |
-| ↑ | Focus up | ✅ 500ms + 150ms |
-| ↓ | Focus down | ✅ 500ms + 150ms |
+### Button Mapping
 
-### RC6 Mode 6 - Special Handling
+| Function | Default Action |
+|----------|---------------|
+| Source | Next input (0→1→2→3→0) |
+| Input 1-4 | Direct select |
+| Vol+ | Increase volume (+3) |
+| Vol- | Decrease volume (-3) |
+| ↑ | Previous focus (Vol→Bass→Treble) |
+| ↓ | Next focus |
+
+### RC6 Toggle Bit Problem
 
 **Problem:** Toggle bit changes with each press.
 
@@ -326,7 +346,7 @@ for(int i = 5; i < rawlen; i++) {
 
 - **↑/↓** - change focus
 - **Vol+/-** - adjust value
-- **Auto-hide** after 2 seconds
+- **Auto-hide** after 5 seconds
 
 ---
 
@@ -334,11 +354,12 @@ for(int i = 5; i < rawlen; i++) {
 
 ### First Boot
 
-1. Power on → WiFi AP "AudioSwitcher"
-2. Connect (password: audio1234)
-3. Navigate to http://192.168.4.1
-4. Configure WiFi → Test → Save
-5. Restart → connects to network
+1. Power on → attempts to connect to saved WiFi
+2. If no saved network or connection fails → AP mode
+3. Connect to AP "AudioSwitcher" (password: `audio1234`)
+4. Navigate to http://192.168.4.1
+5. Configure WiFi → Save → device restarts
+6. After restart → connects to your network, shows IP on display
 
 ### MQTT Setup
 
@@ -348,6 +369,8 @@ for(int i = 5; i < rawlen; i++) {
 4. Topic prefix
 5. Save → Status: Connected ✅
 
+> MQTT config changes apply immediately — no device restart needed.
+
 ### IR Remote Learning
 
 1. Click **Learn** next to function
@@ -355,6 +378,13 @@ for(int i = 5; i < rawlen; i++) {
 3. System saves code/hash
 4. Repeat for all buttons
 5. Test: press Vol+ → should increase volume 🔊
+
+### Security
+
+1. Go to **Security** section in Web UI
+2. **Admin Password** — set password to protect OTA and WebSocket commands (empty = no protection)
+
+> AP password is fixed (`audio1234`) and cannot be changed via WebUI.
 
 ---
 
@@ -376,23 +406,31 @@ for(int i = 5; i < rawlen; i++) {
 **Remote doesn't work:**
 - GPIO19 correctly connected
 - 5V power to receiver
-- Check Serial logs - shows protocol and code
+- Check Serial logs — shows protocol and code
 
-**Same button - different codes:**
+**Same button — different codes:**
 - Normal for RC6 Mode 6 (toggle bit)
 - System uses hash-based matching
 - Hash should be stable
 
-**Auto-repeat doesn't work:**
-- Check if learned as Vol+/Vol-/↑/↓
-- Hold >500ms
+### WiFi / MQTT
+
+**MQTT Status = Disconnected:**
+- Check System Logs — should show `WiFi: Got IP` and `MQTT: Configured for ...`
+- Make sure broker is running and reachable
+- Check if ClientId doesn't conflict with another device
+- Toggle MQTT off/on in UI — reconnect happens automatically
 
 ### OTA Issues
+
+**Upload rejected (401 Unauthorized):**
+- Enter admin password in the Web UI prompt
+- Or set password in Security section
 
 **Firmware doesn't boot:**
 - Check `board_build.partitions = min_spiffs.csv`
 - Logs should show app0 ↔ app1 switching
-- If always app0 - partition problem
+- If always app0 — partition problem
 
 ---
 
@@ -402,21 +440,30 @@ for(int i = 5; i < rawlen; i++) {
 - **Bandwidth:** 20Hz-20kHz
 - **THD+N:** <0.1%
 - **SNR:** >90dB
+- **Volume scale:** 0-56 (user), PT2314 inverts to 0-63 hardware
 
 ### System
 - **Boot:** ~3s
-- **Switch:** <50ms
+- **Switch time:** <50ms
 - **WebSocket:** <100ms
 - **Display:** 60fps (sprite)
+- **Heap logging:** every 30s in System Logs (`[HEAP] free=... minFree=... maxBlock=...`)
 
 ### IR
 - **Tolerance:** 30%
 - **Buffer:** 300 raw values
 - **Debounce:** 300ms
-- **Auto-repeat:** 500ms + 150ms rate
+- **Volume step:** +3/-3 per press
+
+### WiFi
+- **Mode:** STA first, AP fallback
+- **AP SSID:** `AudioSwitcher`
+- **AP Password:** `audio1234` (fixed)
 
 ### Memory
 - **Flash:** 4MB
+- **RAM:** ~17.4% at startup (~57KB used)
+- **Firmware:** ~60.9% flash (~1.2MB)
 - **Partitions:**
   - app0: 1.875MB
   - app1: 1.875MB (OTA)
@@ -424,46 +471,66 @@ for(int i = 5; i < rawlen; i++) {
 
 ---
 
-## 📋 Changelog v4.2
+## 📋 Changelog
 
-### 🆕 New Features
-- ✨ Migration to TFT_eSPI
-- 🎨 Sprite rendering (60fps, zero flicker)
-- 🌈 Gradient + gloss on bars
-- 📡 Universal IR (NEC, RC6, Samsung, Sony)
-- 🔄 Auto-repeat Vol+/Vol-/↑/↓
-- 🎯 RC6 Mode 6 hash-based matching
-- 🚀 OTA with gradient progressbar
+### v4.2 — Current Version
 
-### 🔧 Fixes
-- ✅ RC6 toggle bit handling
-- ✅ OTA partition switching
-- ✅ MQTT callback deduplication
-- ✅ Audio persistence from all sources
-- ✅ FormData for OTA upload
+#### 🆕 New
+- 🎛️ **Rebranding** — "Audio Switcher" → "MultiAMP"
+- 🖥️ **Dashboard WebUI** — redesigned layout: dashboard (inputs + relays) + audio sliders always visible, rest organized in 3 tabs (Settings/Network/System)
+- 🖥️ **Status dots** — WiFi + MQTT connection status in header
+- 🔒 **Security** — admin password (OTA Basic Auth, WebSocket authorization)
+- 🌐 **WiFi STA/AP modes** — STA first, AP fallback for configuration
+- 🌐 **Async WiFi test** — doesn't block the interface
+- 🔄 **Async restart** after WiFi save — response sent before restart
+- 🛡️ **NVS data validation** — all values clamped to valid ranges
+- 💾 **Deferred audio save** — flash protection during rapid adjustments (1500ms delay)
+- 📡 **MQTT** — unique MAC-based ClientId, topic validation, payload fragmentation
+- 🔧 **MQTT topic validation** — removes problematic chars (`#`, `+`, `$`)
+- 🖥️ **System Logs** — live logs in WebUI with enable/disable, auto-refresh, interval control
+- 🖥️ **OTA fullscreen UI** — black screen with centered progress bar
+- 🖥️ **WiFi loading screen** — clean fullscreen overlay with status
 
-### 🎨 Visual Improvements
-- Rounded corners (radius 4px)
-- Triple border on active tiles
-- Green frame on active bar
-- Gradient boost 0-40
-- White gloss effect
+#### 🔧 Fixes
+- ✅ **Vol+/Vol- direction** — fixed in IR
+- ✅ **Volume scale** — unified 0-56 (0=mute, 56=max)
+- ✅ **Volume step** — +3/-3 per press (no repeat needed)
+- ✅ **Bass/Treble scale** — PT2314 API accepts dB (-14..+14), internal mapping
+- ✅ **Bass/Treble WebUI fix** — `int8_t` → `int` cast before `String()` in JSON (was sending ASCII chars instead of numbers)
+- ✅ **Bass/Treble reset** — sanity check on boot resets out-of-range values
+- ✅ **Audio soft-start** — `audio.setVolume(0)` instead of broken `setVolume(63)`
+- ✅ **PT2314 treble register** — fixed `0x7F` → `0x77` for 0dB
+- ✅ **OTA upload** — restored `FormData` with `update` field (multipart/form-data required by ESPAsyncWebServer)
+- ✅ **WiFi auto-reconnect** — `WiFi.setAutoReconnect(true)` + `WiFi.persistent(false)` prevents flash wear
+- ✅ **WiFi reconnect IP fix** — `localIP` now updates correctly after WiFi reconnect
+- ✅ **MQTT disconnect on WiFi loss** — `mqttClient.disconnect()` called on `STA_DISCONNECTED`
+- ✅ **WiFi events** — new `ARDUINO_EVENT_*` names for Arduino-ESP32 v3.x
+- ✅ **OTA** — nullptr partition checks, reject zero-size uploads
+- ✅ **OTA restart** — moved from HTTP callback to `loop()`
+- ✅ **WebSocket parser** — `extractJsonString/Int/UInt/Boolish` extractors, error responses
+- ✅ **JSON escape** — `jsonEscape()` for text fields in WebSocket status
+- ✅ **WiFi test** — async in `loop()` instead of blocking loop in callback
+- ✅ **IR double-trigger** — 150ms debounce prevents duplicate actions
+
+#### 🏗️ Architecture
+- **Modular split** — `config.h`, `globals.cpp`, `storage.cpp`, `ui.cpp`, `audio_ctrl.cpp`, `network.cpp`
+- **PlatformIO** — pinned versions: `espressif32@6.12.0`, `ESPAsyncWebServer@3.1.0`
 
 ---
 
 ## 📄 License
 
-MIT License - see [LICENSE](LICENSE)
+MIT License — see [LICENSE](LICENSE)
 
 ---
 
 ## 🙏 Acknowledgments
 
-- **Bodmer** - TFT_eSPI library
-- **crankyoldgit** - IRremoteESP8266
-- **me-no-dev** - ESPAsyncWebServer
-- **marvinroger** - AsyncMqttClient
-- **ua6em** - ST7789 284x76 offsets discovery
+- **Bodmer** — TFT_eSPI library
+- **crankyoldgit** — IRremoteESP8266
+- **me-no-dev** — ESPAsyncWebServer
+- **marvinroger** — AsyncMqttClient
+- **ua6em** — ST7789 284x76 offsets discovery
 
 ---
 
