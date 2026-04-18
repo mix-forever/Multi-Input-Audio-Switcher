@@ -6,7 +6,16 @@ PT2314::PT2314(){
 	Wire.begin();
 }
 
+static int toneDbToStep(int value){
+  if(value < -14) value = -14;
+  if(value > 14) value = 14;
+  if(value % 2 != 0) value += (value > 0) ? 1 : -1;
+  return value / 2;
+}
+
 void PT2314::setVolume(int vol){
+  if(vol < 0) vol = 0;
+  if(vol > 56) vol = 56;
   vol = 56-vol;
   writeWire(vol);
 }
@@ -36,6 +45,7 @@ void PT2314::setSwitch(int input, int loud, int usil){
 }
 
 void PT2314::setBass(int bass){
+  bass = toneDbToStep(bass);
   switch (bass){
     case -7: bass = 0b01100000;break;
     case -6: bass = 0b01100001;break;
@@ -57,6 +67,7 @@ void PT2314::setBass(int bass){
 }
 
 void PT2314::setTreble(int treb){
+  treb = toneDbToStep(treb);
   switch (treb){
     case -7: treb = 0b01110000;break;
     case -6: treb = 0b01110001;break;
@@ -65,7 +76,7 @@ void PT2314::setTreble(int treb){
     case -3: treb = 0b01110100;break;
     case -2: treb = 0b01110101;break;
     case -1: treb = 0b01110110;break;
-    case 0:  treb = 0b01111111;break;
+    case 0:  treb = 0b01110111;break;
     case 1:  treb = 0b01111110;break;
     case 2:  treb = 0b01111101;break;
     case 3:  treb = 0b01111100;break;
